@@ -23,16 +23,16 @@ importers:
 
   apps/web:
     dependencies:
-      '@keyper/baidupan':
+      '@keysark/baidupan':
         specifier: workspace:*
         version: link:../../packages/baidupan
-      '@keyper/crypto':
+      '@keysark/crypto':
         specifier: workspace:*
         version: link:../../packages/crypto
-      '@keyper/db':
+      '@keysark/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@keyper/ui':
+      '@keysark/ui':
         specifier: workspace:*
         version: link:../../packages/ui
       next:

@@ -1,9 +1,19 @@
 "use client";
 
 // 端到端加密保险库面板。助记词与派生密钥只在浏览器,绝不发服务端。
-// API 只搬运 base64 密文。
+// API 只搬运 base64 密文。UI 参照 1Password:解锁/创建为居中卡片,
+// 已解锁为「侧边栏 + 条目列表 + 详情编辑」三栏布局。
 import { useMemo, useState } from "react";
-import { Button } from "@keyper/ui";
+import {
+  Button,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+  Input,
+  Textarea,
+} from "@keysark/ui";
 import {
   checkVerifier,
   decryptFromEnvelope,
@@ -12,9 +22,10 @@ import {
   generateMnemonic,
   makeVerifier,
   validateMnemonic,
-} from "@keyper/crypto";
+} from "@keysark/crypto";
+import { Logo, Wordmark } from "./brand";
 
-const META_NAME = ".keyper.json";
+const META_NAME = ".keysark.json";
 
 export interface VaultFile {
   id: string;
@@ -86,8 +97,15 @@ export function VaultPanel({
 
   // 已解锁
   const [files, setFiles] = useState<VaultFile[]>(initialFiles);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
   const [path, setPath] = useState("");
   const [content, setContent] = useState("");
+
+  const filtered = useMemo(
+    () => files.filter((f) => f.name.toLowerCase().includes(query.trim().toLowerCase())),
+    [files, query],
+  );
 
   async function refreshList() {
     const res = await fetch("/api/files");
@@ -113,7 +131,7 @@ export function VaultPanel({
       setKey(k);
       setMnemonicInput("");
       setPhase("unlocked");
-      setStatus("已解锁");
+      setStatus(null);
     } catch (err) {
       setStatus(`解锁失败: ${String(err)}`);
     } finally {
@@ -147,7 +165,7 @@ export function VaultPanel({
       setKey(k);
       setNewMnemonic(null);
       setPhase("unlocked");
-      setStatus("保险库已创建");
+      setStatus(null);
     } catch (err) {
       setStatus(`创建失败: ${String(err)}`);
     } finally {
@@ -162,9 +180,10 @@ export function VaultPanel({
     setStatus(`解密 ${file.name} …`);
     try {
       const bytes = await getFileBytes(file.id);
+      setSelectedId(file.id);
       setPath(file.name);
       setContent(await decryptFromEnvelope(key, bytes));
-      setStatus(`已打开 ${file.name}`);
+      setStatus(null);
     } catch (err) {
       setStatus(`打开失败: ${String(err)}`);
     } finally {
@@ -191,6 +210,13 @@ export function VaultPanel({
     }
   }
 
+  function newItem() {
+    setSelectedId(null);
+    setPath("");
+    setContent("");
+    setStatus(null);
+  }
+
   function lock() {
     // 清内存密钥后整页刷新:让服务端重新列出保险库状态(含新建后的 metaFileId)。
     setKey(null);
@@ -199,156 +225,275 @@ export function VaultPanel({
     window.location.reload();
   }
 
-  // ---- 渲染 ----
+  // ============================ 创建保险库 ============================
   if (phase === "create") {
     return (
-      <div className="flex max-w-xl flex-col gap-4 rounded-md border p-6">
-        <h2 className="font-medium">创建保险库</h2>
-        {!newMnemonic ? (
-          <>
-            <p className="text-sm opacity-70">
-              将生成 12 词助记词作为你的主密钥。它只显示一次、只存在你这里——
-              <b>抄写并妥善保管;丢失=数据永久无法恢复</b>。
-            </p>
-            <Button onClick={genMnemonic} disabled={busy}>
-              生成助记词
-            </Button>
-          </>
-        ) : !confirming ? (
-          <>
-            <ol className="grid grid-cols-3 gap-2 rounded-md bg-[var(--color-accent)] p-3 text-sm">
-              {newMnemonic.split(" ").map((w, i) => (
-                <li key={i} className="font-mono">
-                  <span className="opacity-50">{i + 1}.</span> {w}
-                </li>
-              ))}
-            </ol>
-            <p className="text-xs opacity-60">抄写完成后继续,下一步会抽查几个词确认。</p>
-            <Button onClick={() => setConfirming(true)} disabled={busy}>
-              我已抄写,继续
-            </Button>
-          </>
-        ) : (
-          <>
-            <p className="text-sm">请按编号填入对应的词:</p>
-            <div className="flex flex-col gap-2">
-              {challengeIdx.map((i) => (
-                <label key={i} className="flex items-center gap-2 text-sm">
-                  <span className="w-16 opacity-60">第 {i + 1} 个</span>
-                  <input
-                    value={challengeInput[i] ?? ""}
-                    onChange={(e) =>
-                      setChallengeInput((prev) => ({ ...prev, [i]: e.target.value }))
-                    }
-                    className="flex-1 rounded-md border px-2 py-1 font-mono"
-                  />
-                </label>
-              ))}
-            </div>
-            <div className="flex items-center gap-2">
-              <Button onClick={finishCreate} disabled={busy}>
-                确认并创建
-              </Button>
-              <Button variant="ghost" onClick={() => setConfirming(false)} disabled={busy}>
-                再看一遍助记词
-              </Button>
-            </div>
-          </>
-        )}
-        {status ? <span className="text-xs opacity-70">{status}</span> : null}
-      </div>
+      <CenteredShell>
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle>创建你的保险库</CardTitle>
+            <CardDescription>
+              KeysArk 会生成 12 词助记词作为主密钥。它<b>只显示一次、只存在你这里</b>。
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            {!newMnemonic ? (
+              <>
+                <div className="rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] p-4 text-sm text-[var(--color-muted-foreground)]">
+                  请准备好纸笔。生成后请抄写并妥善保管——
+                  <b className="text-[var(--color-danger)]">丢失即数据永久无法恢复</b>,
+                  没有任何人(包括我们)能替你找回。
+                </div>
+                <Button onClick={genMnemonic} disabled={busy} size="lg">
+                  生成助记词
+                </Button>
+              </>
+            ) : !confirming ? (
+              <>
+                <ol className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {newMnemonic.split(" ").map((w, i) => (
+                    <li
+                      key={i}
+                      className="flex items-center gap-2 rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface-2)] px-3 py-2 font-mono text-sm"
+                    >
+                      <span className="text-[var(--color-muted-foreground)] tabular-nums">
+                        {i + 1}.
+                      </span>
+                      <span className="font-medium">{w}</span>
+                    </li>
+                  ))}
+                </ol>
+                <p className="text-xs text-[var(--color-muted-foreground)]">
+                  抄写完成后继续,下一步会抽查几个词以确认你已备份。
+                </p>
+                <Button onClick={() => setConfirming(true)} disabled={busy} size="lg">
+                  我已抄写,继续
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm">请按编号填入对应的词以确认备份:</p>
+                <div className="flex flex-col gap-3">
+                  {challengeIdx.map((i) => (
+                    <label key={i} className="flex items-center gap-3 text-sm">
+                      <span className="w-16 shrink-0 text-[var(--color-muted-foreground)]">
+                        第 {i + 1} 个
+                      </span>
+                      <Input
+                        value={challengeInput[i] ?? ""}
+                        onChange={(e) =>
+                          setChallengeInput((prev) => ({ ...prev, [i]: e.target.value }))
+                        }
+                        className="font-mono"
+                      />
+                    </label>
+                  ))}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button onClick={finishCreate} disabled={busy}>
+                    确认并创建
+                  </Button>
+                  <Button variant="ghost" onClick={() => setConfirming(false)} disabled={busy}>
+                    再看一遍助记词
+                  </Button>
+                </div>
+              </>
+            )}
+            <StatusLine status={status} />
+          </CardContent>
+        </Card>
+      </CenteredShell>
     );
   }
 
+  // ============================ 解锁保险库 ============================
   if (phase === "unlock") {
     return (
-      <div className="flex max-w-xl flex-col gap-4 rounded-md border p-6">
-        <h2 className="font-medium">解锁保险库</h2>
-        <p className="text-sm opacity-70">输入 12 词助记词以在本地派生密钥解密内容。</p>
-        <textarea
-          value={mnemonicInput}
-          onChange={(e) => setMnemonicInput(e.target.value)}
-          placeholder="word1 word2 … word12"
-          rows={3}
-          className="rounded-md border px-3 py-2 font-mono text-sm"
-        />
-        <Button onClick={unlock} disabled={busy}>
-          解锁
-        </Button>
-        {status ? <span className="text-xs opacity-70">{status}</span> : null}
-      </div>
+      <CenteredShell>
+        <Card className="w-full">
+          <CardHeader>
+            <CardTitle>解锁保险库</CardTitle>
+            <CardDescription>输入 12 词助记词,在本地派生密钥以解密内容。</CardDescription>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <Textarea
+              value={mnemonicInput}
+              onChange={(e) => setMnemonicInput(e.target.value)}
+              placeholder="word1 word2 … word12"
+              rows={3}
+              className="font-mono"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) unlock();
+              }}
+            />
+            <Button onClick={unlock} disabled={busy} size="lg">
+              解锁
+            </Button>
+            <StatusLine status={status} />
+          </CardContent>
+        </Card>
+      </CenteredShell>
     );
   }
 
+  // ============================ 已解锁:三栏 ============================
+  const selected = files.find((f) => f.id === selectedId) ?? null;
+
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center justify-between">
-        <span className="text-sm text-green-600">● 已解锁</span>
-        <Button variant="outline" size="sm" onClick={lock} disabled={busy}>
-          锁定
-        </Button>
-      </div>
-      <div className="grid grid-cols-[200px_1fr] gap-4">
-        <aside className="flex flex-col gap-2">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-medium">文件</span>
-            <Button variant="ghost" size="sm" onClick={refreshList} disabled={busy}>
-              刷新
-            </Button>
+    <div className="grid h-screen grid-cols-[15rem_20rem_1fr] overflow-hidden">
+      {/* 侧边栏 */}
+      <aside className="flex flex-col border-r border-[var(--color-border)] bg-[var(--color-surface-2)]">
+        <div className="flex h-14 items-center border-b border-[var(--color-border)] px-4">
+          <Wordmark className="text-base" />
+        </div>
+        <nav className="flex-1 overflow-y-auto p-3">
+          <p className="px-2 pb-1 text-[0.7rem] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+            保管库
+          </p>
+          <div className="flex items-center justify-between rounded-[var(--radius)] bg-[var(--color-accent)] px-2.5 py-2 text-sm font-medium text-[var(--color-accent-foreground)]">
+            <span className="flex items-center gap-2">
+              <Logo className="h-4 w-4" />
+              全部条目
+            </span>
+            <span className="tabular-nums text-xs text-[var(--color-muted-foreground)]">
+              {files.length}
+            </span>
           </div>
-          <ul className="flex flex-col gap-1">
-            {files.length === 0 ? (
-              <li className="text-xs opacity-60">暂无文件</li>
-            ) : (
-              files.map((f) => (
+        </nav>
+        <div className="border-t border-[var(--color-border)] p-3">
+          <div className="mb-2 flex items-center gap-2 px-1 text-xs text-[var(--color-muted-foreground)]">
+            <span className="h-2 w-2 rounded-full bg-[var(--color-success)]" />
+            已解锁
+          </div>
+          <Button variant="outline" size="sm" className="w-full" onClick={lock} disabled={busy}>
+            锁定保险库
+          </Button>
+        </div>
+      </aside>
+
+      {/* 条目列表 */}
+      <section className="flex flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]">
+        <div className="flex h-14 items-center justify-between gap-2 border-b border-[var(--color-border)] px-4">
+          <span className="text-sm font-semibold">全部条目</span>
+          <Button variant="default" size="sm" onClick={newItem} disabled={busy}>
+            + 新建
+          </Button>
+        </div>
+        <div className="border-b border-[var(--color-border)] p-3">
+          <Input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="搜索条目…"
+            className="h-9"
+          />
+        </div>
+        <ul className="flex-1 overflow-y-auto p-2">
+          {filtered.length === 0 ? (
+            <li className="px-3 py-8 text-center text-sm text-[var(--color-muted-foreground)]">
+              {files.length === 0 ? "保险库还是空的,点「+ 新建」开始。" : "没有匹配的条目。"}
+            </li>
+          ) : (
+            filtered.map((f) => {
+              const active = f.id === selectedId;
+              return (
                 <li key={f.id}>
                   <button
                     type="button"
                     onClick={() => openFile(f)}
                     disabled={busy}
-                    className="w-full truncate rounded px-2 py-1 text-left text-sm hover:bg-[var(--color-accent)]"
+                    className={`flex w-full items-center gap-3 rounded-[var(--radius)] px-3 py-2.5 text-left transition-colors ${
+                      active
+                        ? "bg-[var(--color-primary)] text-[var(--color-primary-foreground)]"
+                        : "hover:bg-[var(--color-accent)]"
+                    }`}
                   >
-                    {f.name}
+                    <span
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-xs font-semibold ${
+                        active
+                          ? "bg-[var(--color-primary-foreground)]/20"
+                          : "bg-[var(--color-accent)] text-[var(--color-accent-foreground)]"
+                      }`}
+                    >
+                      {f.name.slice(0, 1).toUpperCase()}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium">{f.name}</span>
+                      <span
+                        className={`block text-xs ${active ? "opacity-80" : "text-[var(--color-muted-foreground)]"}`}
+                      >
+                        {f.size} 字节(密文)
+                      </span>
+                    </span>
                   </button>
                 </li>
-              ))
-            )}
-          </ul>
-        </aside>
+              );
+            })
+          )}
+        </ul>
+      </section>
 
-        <section className="flex flex-col gap-3">
-          <input
-            value={path}
-            onChange={(e) => setPath(e.target.value)}
-            placeholder="文件名或相对路径,如 notes/todo.txt"
-            className="rounded-md border px-3 py-2 text-sm"
-          />
-          <textarea
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
-            placeholder="在这里编辑文本(保存时本地加密) …"
-            rows={16}
-            className="resize-y rounded-md border px-3 py-2 font-mono text-sm"
-          />
+      {/* 详情 / 编辑 */}
+      <section className="flex flex-col bg-[var(--color-background)]">
+        <div className="flex h-14 items-center justify-between gap-3 border-b border-[var(--color-border)] px-6">
+          <span className="truncate text-sm font-semibold">
+            {selected ? selected.name : "新建条目"}
+          </span>
+          <StatusLine status={status} inline />
+        </div>
+        <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-6">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs font-medium text-[var(--color-muted-foreground)]">
+              文件名 / 相对路径
+            </span>
+            <Input
+              value={path}
+              onChange={(e) => setPath(e.target.value)}
+              placeholder="如 notes/todo.txt"
+            />
+          </label>
+          <label className="flex min-h-0 flex-1 flex-col gap-1.5">
+            <span className="text-xs font-medium text-[var(--color-muted-foreground)]">内容</span>
+            <Textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="在这里编辑文本(保存时在本地加密)…"
+              className="min-h-[18rem] flex-1 resize-none font-mono leading-relaxed"
+            />
+          </label>
           <div className="flex items-center gap-2">
             <Button onClick={save} disabled={busy}>
               加密保存到网盘
             </Button>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setPath("");
-                setContent("");
-                setStatus(null);
-              }}
-              disabled={busy}
-            >
-              新建
+            <Button variant="outline" onClick={newItem} disabled={busy}>
+              清空
             </Button>
-            {status ? <span className="text-xs opacity-70">{status}</span> : null}
+            <span className="ml-auto text-xs text-[var(--color-muted-foreground)]">
+              密文存于 /apps/Keyper/
+            </span>
           </div>
-        </section>
-      </div>
+        </div>
+      </section>
     </div>
+  );
+}
+
+// 居中外壳:解锁/创建页用,顶部带品牌。
+function CenteredShell({ children }: { children: React.ReactNode }) {
+  return (
+    <main className="flex min-h-screen flex-col items-center justify-center gap-8 bg-[var(--color-background)] px-4 py-12">
+      <Wordmark className="text-xl" />
+      <div className="w-full max-w-md">{children}</div>
+    </main>
+  );
+}
+
+function StatusLine({ status, inline }: { status: string | null; inline?: boolean }) {
+  if (!status) return inline ? null : null;
+  return (
+    <span
+      className={`text-xs text-[var(--color-muted-foreground)] ${inline ? "truncate" : ""}`}
+    >
+      {status}
+    </span>
   );
 }

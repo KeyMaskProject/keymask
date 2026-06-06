@@ -2,19 +2,64 @@
 
 @source "./**/*.{ts,tsx}";
 
+/*
+ * KeysArk design tokens. 1Password-inspired visual language:
+ * neutral cool-gray surfaces, a single confident blue accent.
+ * @theme emits each token as a :root custom property AND a Tailwind
+ * utility (bg-surface, text-muted-foreground, border-border …).
+ * The dark overrides below re-assign the same custom properties, so
+ * every utility and every var(--color-*) reference follows the system
+ * theme at runtime with no class toggling required.
+ */
 @theme {
-  --color-background: oklch(1 0 0);
-  --color-foreground: oklch(0.145 0 0);
-  --color-primary: oklch(0.205 0 0);
-  --color-primary-foreground: oklch(0.985 0 0);
-  --color-accent: oklch(0.97 0 0);
-  --color-accent-foreground: oklch(0.205 0 0);
-  --color-input: oklch(0.922 0 0);
-  --color-ring: oklch(0.708 0 0);
-  --radius: 0.5rem;
+  --color-background: oklch(0.971 0.003 247);
+  --color-surface: oklch(1 0 0);
+  --color-surface-2: oklch(0.985 0.003 247);
+  --color-foreground: oklch(0.21 0.02 264);
+  --color-muted-foreground: oklch(0.55 0.02 264);
+  --color-border: oklch(0.916 0.005 247);
+  --color-primary: oklch(0.58 0.196 256);
+  --color-primary-foreground: oklch(0.99 0 0);
+  --color-accent: oklch(0.955 0.012 256);
+  --color-accent-foreground: oklch(0.3 0.03 264);
+  --color-input: oklch(0.916 0.005 247);
+  --color-ring: oklch(0.58 0.196 256);
+  --color-success: oklch(0.62 0.15 152);
+  --color-danger: oklch(0.58 0.21 24);
+
+  --radius: 0.625rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-background: oklch(0.197 0.012 264);
+    --color-surface: oklch(0.238 0.013 264);
+    --color-surface-2: oklch(0.27 0.014 264);
+    --color-foreground: oklch(0.96 0.005 264);
+    --color-muted-foreground: oklch(0.68 0.013 264);
+    --color-border: oklch(0.32 0.014 264);
+    --color-primary: oklch(0.68 0.16 254);
+    --color-primary-foreground: oklch(0.16 0.02 264);
+    --color-accent: oklch(0.3 0.016 264);
+    --color-accent-foreground: oklch(0.95 0.005 264);
+    --color-input: oklch(0.34 0.014 264);
+    --color-ring: oklch(0.68 0.16 254);
+    --color-success: oklch(0.72 0.15 152);
+    --color-danger: oklch(0.68 0.19 24);
+  }
 }
 
 @layer base {
-  * { border-color: var(--color-input); }
-  body { background-color: var(--color-background); color: var(--color-foreground); }
+  * {
+    border-color: var(--color-border);
+  }
+  html {
+    color-scheme: light dark;
+  }
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
 }

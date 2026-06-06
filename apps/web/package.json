@@ -1,5 +1,5 @@
 {
-  "name": "@keyper/web",
+  "name": "@keysark/web",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,10 +11,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@keyper/baidupan": "workspace:*",
-    "@keyper/crypto": "workspace:*",
-    "@keyper/db": "workspace:*",
-    "@keyper/ui": "workspace:*",
+    "@keysark/baidupan": "workspace:*",
+    "@keysark/crypto": "workspace:*",
+    "@keysark/db": "workspace:*",
+    "@keysark/ui": "workspace:*",
     "next": "^16.2.7",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"

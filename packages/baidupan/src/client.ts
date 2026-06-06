@@ -52,7 +52,7 @@ export class BaiduPanClient {
     private readonly config: BaiduPanConfig,
   ) {}
 
-  /** 沙盒根目录,如 /apps/keyper */
+  /** 沙盒根目录,如 /apps/Keyper */
   get root(): string {
     return appRoot(this.config);
   }

@@ -9,8 +9,8 @@ import { wordlist } from "@scure/bip39/wordlists/english.js";
 import { hkdf } from "@noble/hashes/hkdf.js";
 import { sha256 } from "@noble/hashes/sha2.js";
 
-const VERIFIER_MARKER = "keyper-verify-v1";
-const HKDF_INFO = new TextEncoder().encode("keyper-aes-gcm-v1");
+const VERIFIER_MARKER = "keysark-verify-v1";
+const HKDF_INFO = new TextEncoder().encode("keysark-aes-gcm-v1");
 
 // 把 Uint8Array 拷成独立 ArrayBuffer,规避 WebCrypto 类型对 SharedArrayBuffer 的排斥。
 function toArrayBuffer(u: Uint8Array): ArrayBuffer {

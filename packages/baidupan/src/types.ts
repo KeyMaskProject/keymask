@@ -2,7 +2,7 @@
 export interface PanFile {
   /** 文件唯一 id,filemetas / 下载需要 */
   fs_id: number;
-  /** 绝对路径,如 /apps/keyper/foo.txt */
+  /** 绝对路径,如 /apps/Keyper/foo.txt */
   path: string;
   /** 文件名 (server_filename) */
   server_filename: string;

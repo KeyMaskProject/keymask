@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const config: NextConfig = {
-  transpilePackages: ["@keyper/ui", "@keyper/db", "@keyper/baidupan", "@keyper/crypto"],
+  transpilePackages: ["@keysark/ui", "@keysark/db", "@keysark/baidupan", "@keysark/crypto"],
   experimental: { typedRoutes: true },
 };
 

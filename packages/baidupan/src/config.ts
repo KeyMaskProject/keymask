@@ -34,7 +34,7 @@ export function loadConfig(): BaiduPanConfig {
   };
 }
 
-/** 沙盒根目录,例如 /apps/keyper */
+/** 沙盒根目录,例如 /apps/Keyper */
 export function appRoot(config: BaiduPanConfig): string {
   return `/apps/${config.appDirName}`;
 }

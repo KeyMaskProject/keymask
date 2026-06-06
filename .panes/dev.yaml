@@ -1,8 +1,5 @@
 # Root `pnpm dev` 编排。dir: .. 让每个 pane 落到仓库根。
 dir: ..
 commands:
-  # 上: Next.js dev server (固定端口 6134)
-  - exec: pnpm --filter @keyper/web dev
-  # 下: drizzle studio。等 web 端口起来再拉
-  - exec: pnpm --filter @keyper/db db:studio
-    waitPort: 6134
+  # Next.js dev server (固定端口 6134)
+  - exec: pnpm --filter @keysark/web dev
