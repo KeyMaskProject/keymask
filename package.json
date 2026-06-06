@@ -1,0 +1,21 @@
+{
+  "name": "keyper",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.28.2",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "pnpm -r run build",
+    "dev": "panes -c .panes/dev.yaml",
+    "dev:parallel": "pnpm -r --parallel run dev",
+    "test": "pnpm -r run test",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "panes-cli": "0.2.6",
+    "tsx": "^4.22.4",
+    "typescript": "^6.0.3"
+  }
+}

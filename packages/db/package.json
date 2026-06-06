@@ -1,0 +1,27 @@
+{
+  "name": "@keyper/db",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./schema": "./src/schema.ts",
+    "./id": "./src/id.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "db:generate": "dotenv -e .env.local -- drizzle-kit generate",
+    "db:migrate": "dotenv -e .env.local -- drizzle-kit migrate",
+    "db:push": "dotenv -e .env.local -- drizzle-kit push --force",
+    "db:studio": "dotenv -e .env.local -- drizzle-kit studio"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.45.2",
+    "postgres": "^3.4.9",
+    "uuidv7": "^1.2.1"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^11.0.0",
+    "drizzle-kit": "^0.31.10"
+  }
+}

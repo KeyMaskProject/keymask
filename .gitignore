@@ -1,0 +1,23 @@
+node_modules
+.pnpm-store
+
+dist
+build
+.next
+.turbo
+coverage
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.example
+
+*.log
+.DS_Store
+.idea
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# panes: commit shared recipes (.panes/dev.yaml), ignore personal machine tweaks
+.panes/local.yaml
