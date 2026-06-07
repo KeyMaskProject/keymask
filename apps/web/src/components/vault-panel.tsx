@@ -1134,7 +1134,7 @@ export function VaultPanel({
           {/* 分体按钮:主体直接新建条目,右侧三角下拉提供「新建文件夹」 */}
           <div className="flex items-center">
             <Button
-              variant="default"
+              variant="secondary"
               size="sm"
               onClick={() => newItem()}
               disabled={busy}
@@ -1145,11 +1145,11 @@ export function VaultPanel({
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
-                  variant="default"
+                  variant="secondary"
                   size="sm"
                   disabled={busy}
                   aria-label={t("more_actions")}
-                  className="rounded-l-none border-l border-[var(--color-primary-foreground)]/25 px-1.5"
+                  className="rounded-l-none border-l border-[var(--color-border)] px-1.5"
                 >
                   <ChevronDown className="h-4 w-4" />
                 </Button>
