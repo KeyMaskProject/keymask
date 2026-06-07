@@ -4,10 +4,20 @@ const AUTHORIZE_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
 
-// openid/email/profile 取身份;drive.appdata 仅授予应用专属隐藏文件夹(appDataFolder)的读写,
-// 绝不触碰用户其它 Drive 文件 —— 与百度沙盒同等隔离。
-export const DEFAULT_SCOPE =
-  "openid email profile https://www.googleapis.com/auth/drive.appdata";
+// openid/email/profile 取身份。
+// drive.appdata:仅应用专属隐藏文件夹(appDataFolder)的读写,与百度沙盒同等隔离,用户在 Drive 里看不到。
+// drive.file  :应用在 My Drive 里创建/打开的文件(可见),用于「根目录可见文件夹」模式;仍只能碰本应用创建的文件。
+const IDENTITY = "openid email profile";
+const SCOPE_APPDATA = `${IDENTITY} https://www.googleapis.com/auth/drive.appdata`;
+const SCOPE_FILE = `${IDENTITY} https://www.googleapis.com/auth/drive.file`;
+
+/** 默认 scope(appDataFolder 隐藏沙盒)。 */
+export const DEFAULT_SCOPE = SCOPE_APPDATA;
+
+/** 按存储位置选 scope:设置了可见文件夹名 → drive.file;否则 → drive.appdata。 */
+export function driveScope(driveFolder: string): string {
+  return driveFolder ? SCOPE_FILE : SCOPE_APPDATA;
+}
 
 export interface TokenResponse {
   /** 调用 Drive API 的凭据(expiresIn 秒后过期,通常 3600) */

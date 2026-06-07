@@ -3,10 +3,13 @@ import { NextResponse } from "next/server";
 import {
   GoogleDriveClient,
   buildAuthorizeUrl,
+  driveScope,
   exchangeCodeForToken,
   fetchUserInfo,
   loadGoogleConfig,
   refreshAccessToken,
+  type DriveOptions,
+  type GoogleConfig,
 } from "@keysark/googledrive";
 import {
   getStorageAccount,
@@ -20,6 +23,13 @@ const PROVIDER = "google";
 const STATE_COOKIE = "google_oauth_state";
 export const GOOGLE_UID_COOKIE = "google_uid";
 const REFRESH_SKEW_MS = 60_000;
+
+/** 由配置推导客户端存储位置:设置了 GOOGLE_DRIVE_FOLDER → 根下可见文件夹;否则 → 隐藏 appDataFolder。 */
+function driveOptions(config: GoogleConfig): DriveOptions {
+  return config.driveFolder
+    ? { mode: "folder", folderName: config.driveFolder }
+    : { mode: "appdata" };
+}
 
 export interface ConnectedGoogle {
   client: GoogleDriveClient;
@@ -49,14 +59,16 @@ export async function getConnectedGoogle(): Promise<ConnectedGoogle | null> {
     });
   }
 
-  return { client: new GoogleDriveClient(accessToken), sub };
+  return { client: new GoogleDriveClient(accessToken, driveOptions(config)), sub };
 }
 
 /** 发起 Google 授权:state 防 CSRF → 重定向授权页。 */
 export async function handleGoogleLogin(): Promise<NextResponse> {
   const config = loadGoogleConfig();
   const state = newId();
-  const res = NextResponse.redirect(buildAuthorizeUrl(config, { state }));
+  const res = NextResponse.redirect(
+    buildAuthorizeUrl(config, { state, scope: driveScope(config.driveFolder) }),
+  );
   res.cookies.set(STATE_COOKIE, state, {
     httpOnly: true,
     sameSite: "lax",

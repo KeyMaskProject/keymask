@@ -4,7 +4,7 @@
 // 登录流:0 个库 → 创建;1 个库 → 直接解锁;≥2 个库 → 先选库,再输入该库助记词。
 // 数据模型:keysark.json 注册表(明文元数据 + 密文校验块)+ 每个库各自的 index/items(见 @/lib/vault、@/lib/registry)。
 // UI 参照 1Password:选择/解锁/创建为居中卡片,已解锁为「条目列 + 详情」两栏工作台。
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Button,
   Card,
@@ -23,12 +23,23 @@ import {
   validateMnemonic,
 } from "@keysark/crypto";
 import { newId } from "@keysark/db/id";
-import { ChevronRight, Folder, Hash, Inbox, Pencil, Plus, Trash2, X } from "lucide-react";
+import {
+  ChevronRight,
+  ExternalLink,
+  Folder,
+  Hash,
+  Inbox,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { Logo, Wordmark } from "./brand";
 import { HeaderControls } from "./controls";
 import { UserMenu } from "./user-menu";
 import { useT } from "./providers";
-import { Vault, type EntryMeta, type FolderMeta } from "@/lib/vault";
+import { Vault, itemRelPath, type EntryMeta, type FolderMeta } from "@/lib/vault";
+import type { StorageLocation } from "@/lib/storage";
 import {
   b64decode,
   b64encode,
@@ -99,6 +110,8 @@ export function VaultPanel({
   const [pending, setPending] = useState(0);
   // 详情区两种模式:打开已有条目为只读 preview;新建/点击编辑进入 edit。
   const [mode, setMode] = useState<"preview" | "edit">("preview");
+  // 当前条目在网盘里的位置(预览态下方展示)
+  const [location, setLocation] = useState<StorageLocation | null>(null);
   // 编辑态的所属文件夹 / 标签
   const [editFolderId, setEditFolderId] = useState<string | null>(null);
   const [editTags, setEditTags] = useState<string[]>([]);
@@ -125,6 +138,28 @@ export function VaultPanel({
       return true;
     });
   }, [entries, query, nav]);
+
+  // 预览某条目时,查询它在网盘里的位置 / 访问链接(只读元数据,不涉及内容)。
+  useEffect(() => {
+    if (mode !== "preview" || !selectedId || !selectedVault) {
+      setLocation(null);
+      return;
+    }
+    let alive = true;
+    const relPath = itemRelPath(selectedVault.dir, selectedId);
+    setLocation(null);
+    fetch(`/api/files/locate?path=${encodeURIComponent(relPath)}`)
+      .then((res) => (res.ok ? (res.json() as Promise<StorageLocation>) : null))
+      .then((loc) => {
+        if (alive && loc && !("error" in loc)) setLocation(loc);
+      })
+      .catch(() => {
+        /* 定位失败不影响阅读;静默 */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [mode, selectedId, selectedVault]);
 
   async function enterVault(key: CryptoKey, descriptor: VaultDescriptor) {
     const v = new Vault(key, { id: descriptor.id, dir: descriptor.dir });
@@ -991,6 +1026,25 @@ export function VaultPanel({
                 <span className="text-[var(--color-muted-foreground)]">{t("content_empty")}</span>
               )}
             </article>
+            {location ? (
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-t border-[var(--color-border)] pt-3 text-xs text-[var(--color-muted-foreground)]">
+                <span className="shrink-0">
+                  {t("stored_at", t(location.provider === "google" ? "provider_google" : "provider_baidu"))}
+                </span>
+                <code className="min-w-0 break-all text-[var(--color-foreground)]">{location.path}</code>
+                {location.url ? (
+                  <a
+                    href={location.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex shrink-0 items-center gap-1 text-[var(--color-primary)] hover:underline"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                    {t("open_in_netdisk")}
+                  </a>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         ) : (
           // ---- 无选中:空态 ----

@@ -5,7 +5,10 @@ pnpm monorepo. Workspaces: `apps/*`, `packages/*`。
 端到端加密的网盘文本保管库:存储后端支持 **百度网盘** 与 **Google Drive**(各自的 OAuth 登录,二选一);内容在浏览器用用户手持的 **BIP39 助记词** 派生密钥加密,服务端与存储后端只经手密文。
 
 - 百度:OAuth + 沙盒目录 `/apps/Keyper/`。
-- Google:OAuth + Drive **appDataFolder**(应用专属隐藏文件夹,scope 仅 `drive.appdata`,不触碰用户其它文件)。
+- Google:OAuth + Drive,存放位置由环境变量 `GOOGLE_DRIVE_FOLDER` 决定(二选一,均只碰本应用文件):
+  - **留空(默认)**:**appDataFolder**(应用专属隐藏文件夹,scope `drive.appdata`,用户在 Drive 里看不到)。
+  - **设为文件夹名(如 `KeysArk`)**:My Drive 根目录下的**可见文件夹**,scope `drive.file`(应用只能访问自己创建/打开的文件)。
+  - 切换该变量需重新登录授权(scope 变化)。
 - 上层(`apps/web` 的 page / `/api/files*`)只依赖统一抽象 `@/lib/storage`(`getConnectedStorage()`),与具体后端无关。
 
 ## 强制约束 (Hard rules)

@@ -5,7 +5,8 @@ export {
   refreshAccessToken,
   fetchUserInfo,
   DEFAULT_SCOPE,
+  driveScope,
   type TokenResponse,
   type GoogleUserInfo,
 } from "./oauth";
-export { GoogleDriveClient, type DriveFile } from "./client";
+export { GoogleDriveClient, type DriveFile, type DriveOptions } from "./client";

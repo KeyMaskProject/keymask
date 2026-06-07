@@ -20,6 +20,11 @@ function joinPath(base: string, name: string): string {
   return base ? `${base}/${name}` : name;
 }
 
+/** 某条目在存储后端里的相对路径(dir 为保险库数据目录,""=根)。用于展示网盘位置。 */
+export function itemRelPath(dir: string, id: string): string {
+  return joinPath(joinPath(dir, ITEMS_DIR), `${id}.json`);
+}
+
 /** 文件夹:靠 parentId 串成无限嵌套的树;只存在于 index 里(无独立文件)。 */
 export interface FolderMeta {
   id: string;
