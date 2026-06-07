@@ -14,6 +14,7 @@
     "@keysark/baidupan": "workspace:*",
     "@keysark/crypto": "workspace:*",
     "@keysark/db": "workspace:*",
+    "@keysark/googledrive": "workspace:*",
     "@keysark/ui": "workspace:*",
     "lucide-react": "^1.17.0",
     "next": "^16.2.7",

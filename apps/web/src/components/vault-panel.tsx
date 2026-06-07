@@ -23,11 +23,12 @@ import {
   validateMnemonic,
 } from "@keysark/crypto";
 import { newId } from "@keysark/db/id";
+import { ChevronRight, Folder, Hash, Inbox, Pencil, Plus, Trash2, X } from "lucide-react";
 import { Logo, Wordmark } from "./brand";
 import { HeaderControls } from "./controls";
 import { UserMenu } from "./user-menu";
 import { useT } from "./providers";
-import { Vault, type EntryMeta } from "@/lib/vault";
+import { Vault, type EntryMeta, type FolderMeta } from "@/lib/vault";
 import {
   b64decode,
   b64encode,
@@ -89,6 +90,7 @@ export function VaultPanel({
 
   // 已解锁 / 工作台
   const [entries, setEntries] = useState<EntryMeta[]>([]);
+  const [folders, setFolders] = useState<FolderMeta[]>([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -97,14 +99,32 @@ export function VaultPanel({
   const [pending, setPending] = useState(0);
   // 详情区两种模式:打开已有条目为只读 preview;新建/点击编辑进入 edit。
   const [mode, setMode] = useState<"preview" | "edit">("preview");
+  // 编辑态的所属文件夹 / 标签
+  const [editFolderId, setEditFolderId] = useState<string | null>(null);
+  const [editTags, setEditTags] = useState<string[]>([]);
+  const [tagInput, setTagInput] = useState("");
 
-  const filtered = useMemo(
-    () =>
-      entries.filter((e) =>
-        (e.title || "").toLowerCase().includes(query.trim().toLowerCase()),
-      ),
-    [entries, query],
+  // 侧栏导航:全部 / 某文件夹 / 某标签
+  type Nav = { kind: "all" } | { kind: "folder"; id: string } | { kind: "tag"; name: string };
+  const [nav, setNav] = useState<Nav>({ kind: "all" });
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const allTags = useMemo(
+    () => [...new Set(entries.flatMap((e) => e.tags))].sort((a, b) => a.localeCompare(b)),
+    [entries],
   );
+
+  const filtered = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return entries.filter((e) => {
+      if (nav.kind === "folder" && e.folderId !== nav.id) return false;
+      if (nav.kind === "tag" && !e.tags.includes(nav.name)) return false;
+      if (q && !(e.title || "").toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }, [entries, query, nav]);
 
   async function enterVault(key: CryptoKey, descriptor: VaultDescriptor) {
     const v = new Vault(key, { id: descriptor.id, dir: descriptor.dir });
@@ -116,6 +136,7 @@ export function VaultPanel({
     try {
       const list = await v.load();
       setEntries(list);
+      setFolders(v.folders);
       setPending(v.pendingCount());
     } catch (err) {
       setStatus(t("st_load_fail", String(err)));
@@ -232,6 +253,10 @@ export function VaultPanel({
       setSelectedId(doc.id);
       setTitle(doc.title);
       setContent(doc.content);
+      // 文件夹/标签以 index 元数据为准(文件夹增删后 doc 内可能已过期)
+      setEditFolderId(meta.folderId);
+      setEditTags(meta.tags);
+      setTagInput("");
       setMode("preview");
       setStatus(null);
     } catch (err) {
@@ -247,7 +272,13 @@ export function VaultPanel({
     setBusy(true);
     setStatus(t("st_saving"));
     try {
-      const result = await v.save({ id: selectedId, title: title.trim(), content });
+      const result = await v.save({
+        id: selectedId,
+        title: title.trim(),
+        content,
+        folderId: editFolderId,
+        tags: editTags,
+      });
       setEntries(result.entries);
       setSelectedId(result.id);
       setPending(v.pendingCount());
@@ -281,8 +312,23 @@ export function VaultPanel({
     setSelectedId(null);
     setTitle("");
     setContent("");
+    // 当前停在某文件夹下就默认归到该文件夹
+    setEditFolderId(nav.kind === "folder" ? nav.id : null);
+    setEditTags([]);
+    setTagInput("");
     setMode("edit"); // 新建直接进编辑
     setStatus(null);
+  }
+
+  // 标签编辑
+  function addTag(raw: string) {
+    const tag = raw.trim();
+    if (!tag) return;
+    setEditTags((prev) => (prev.includes(tag) ? prev : [...prev, tag]));
+    setTagInput("");
+  }
+  function removeTag(tag: string) {
+    setEditTags((prev) => prev.filter((x) => x !== tag));
   }
 
   function editEntry() {
@@ -292,6 +338,7 @@ export function VaultPanel({
 
   async function cancelEdit() {
     setStatus(null);
+    setTagInput("");
     // 编辑已有条目 → 放弃改动,重新读回原文进入预览;新建未保存 → 清空回到空预览。
     const meta = selectedId ? entries.find((e) => e.id === selectedId) : null;
     if (meta) {
@@ -300,8 +347,73 @@ export function VaultPanel({
       setSelectedId(null);
       setTitle("");
       setContent("");
+      setEditTags([]);
       setMode("preview");
     }
+  }
+
+  // ---- 文件夹管理 ----
+  function toggleExpand(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function runFolderOp(op: () => Promise<{ synced: boolean; syncError?: string }>) {
+    const v = vaultRef.current;
+    if (!v) return;
+    setBusy(true);
+    try {
+      const res = await op();
+      setFolders(v.folders);
+      setEntries(v.entries);
+      setPending(v.pendingCount());
+      if (!res.synced) setStatus(t("st_saved_local", res.syncError ?? ""));
+    } catch (err) {
+      setStatus(t("st_save_fail", String(err)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addFolderUnder(parentId: string | null) {
+    const v = vaultRef.current;
+    if (!v) return;
+    setBusy(true);
+    try {
+      const res = await v.addFolder(t("new_folder"), parentId);
+      setFolders(res.folders);
+      setPending(v.pendingCount());
+      if (parentId) setExpanded((prev) => new Set(prev).add(parentId));
+      // 立即进入重命名
+      setRenamingId(res.id);
+      setRenameValue(t("new_folder"));
+      if (!res.synced) setStatus(t("st_saved_local", res.syncError ?? ""));
+    } catch (err) {
+      setStatus(t("st_save_fail", String(err)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function startRename(f: FolderMeta) {
+    setRenamingId(f.id);
+    setRenameValue(f.name);
+  }
+  async function commitRename() {
+    const id = renamingId;
+    if (!id) return;
+    const name = renameValue.trim();
+    setRenamingId(null);
+    if (name) await runFolderOp(() => vaultRef.current!.renameFolder(id, name));
+  }
+  async function removeFolder(f: FolderMeta) {
+    if (!window.confirm(t("confirm_delete_folder", f.name || t("new_folder")))) return;
+    if (nav.kind === "folder" && nav.id === f.id) setNav({ kind: "all" });
+    await runFolderOp(() => vaultRef.current!.deleteFolder(f.id));
   }
 
   function lock() {
@@ -503,22 +615,191 @@ export function VaultPanel({
   // ============================ 工作台:两栏(条目列 + 详情) ============================
   const selected = entries.find((e) => e.id === selectedId) ?? null;
   const currentName = selectedVault ? vaultName(selectedVault) : t("default_vault");
-  const currentIsDefault = selectedVault ? isDefaultVault(selectedVault) : true;
+
+  // 文件夹树:递归展开为带缩进的扁平行(仅展开节点的子项)。
+  const childFolders = (parentId: string | null) =>
+    folders.filter((f) => f.parentId === parentId).sort((a, b) => a.name.localeCompare(b.name));
+
+  // 编辑态文件夹下拉:整棵树扁平化,用前缀缩进表示层级。
+  function folderOptions(): { id: string; label: string }[] {
+    const out: { id: string; label: string }[] = [];
+    const walk = (parentId: string | null, depth: number) => {
+      for (const f of childFolders(parentId)) {
+        out.push({ id: f.id, label: `${"  ".repeat(depth)}${f.name || t("new_folder")}` });
+        walk(f.id, depth + 1);
+      }
+    };
+    walk(null, 0);
+    return out;
+  }
+  function folderRows(parentId: string | null, depth: number): React.ReactNode[] {
+    return childFolders(parentId).flatMap((f) => {
+      const hasKids = folders.some((c) => c.parentId === f.id);
+      const open = expanded.has(f.id);
+      const active = nav.kind === "folder" && nav.id === f.id;
+      const row = (
+        <div
+          key={f.id}
+          className={`group flex items-center rounded-[var(--radius)] pr-1 ${
+            active
+              ? "bg-[var(--color-accent)] text-[var(--color-accent-foreground)]"
+              : "hover:bg-[var(--color-accent)]"
+          }`}
+          style={{ paddingLeft: depth * 14 }}
+        >
+          <button
+            type="button"
+            onClick={() => hasKids && toggleExpand(f.id)}
+            className="flex h-7 w-5 shrink-0 items-center justify-center text-[var(--color-muted-foreground)]"
+            aria-hidden={!hasKids}
+          >
+            {hasKids ? (
+              <ChevronRight className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-90" : ""}`} />
+            ) : null}
+          </button>
+          <Folder className="h-3.5 w-3.5 shrink-0 text-[var(--color-muted-foreground)]" />
+          {renamingId === f.id ? (
+            <input
+              autoFocus
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") commitRename();
+                if (e.key === "Escape") setRenamingId(null);
+              }}
+              className="ml-1.5 h-6 min-w-0 flex-1 rounded border border-[var(--color-input)] bg-[var(--color-surface)] px-1 text-sm"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => setNav({ kind: "folder", id: f.id })}
+              className="ml-1.5 min-w-0 flex-1 truncate py-1.5 text-left text-sm"
+            >
+              {f.name || t("new_folder")}
+            </button>
+          )}
+          <span className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100">
+            <button
+              type="button"
+              title={t("add_subfolder")}
+              onClick={() => addFolderUnder(f.id)}
+              disabled={busy}
+              className="flex h-6 w-6 items-center justify-center rounded hover:bg-[var(--color-surface)]"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              title={t("rename")}
+              onClick={() => startRename(f)}
+              disabled={busy}
+              className="flex h-6 w-6 items-center justify-center rounded hover:bg-[var(--color-surface)]"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              title={t("delete")}
+              onClick={() => removeFolder(f)}
+              disabled={busy}
+              className="flex h-6 w-6 items-center justify-center rounded text-[var(--color-danger)] hover:bg-[var(--color-surface)]"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </span>
+        </div>
+      );
+      return open ? [row, ...folderRows(f.id, depth + 1)] : [row];
+    });
+  }
 
   return (
-    <div className="grid h-screen grid-cols-[20rem_1fr] overflow-hidden">
-      {/* 条目列(含品牌 / 当前保险库 / 锁定) */}
-      <section className="flex flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]">
+    <div className="grid h-screen grid-cols-[15rem_18rem_1fr] overflow-hidden">
+      {/* 导航:全部 / 文件夹树 / 标签 */}
+      <aside className="flex flex-col border-r border-[var(--color-border)] bg-[var(--color-surface-2)]">
         <div className="flex h-14 items-center border-b border-[var(--color-border)] px-4">
           <Wordmark className="text-base" />
         </div>
-        {/* 默认库不显示名称(顶部已有 KeysArk 字标);具名库才显示名称 */}
-        {!currentIsDefault ? (
-          <div className="flex items-center gap-2 border-b border-[var(--color-border)] px-4 py-3 text-sm font-semibold">
-            <Logo className="h-4 w-4 shrink-0" />
-            <span className="truncate">{currentName}</span>
+        <div className="flex-1 overflow-y-auto p-2">
+          <button
+            type="button"
+            onClick={() => setNav({ kind: "all" })}
+            className={`flex w-full items-center gap-2 rounded-[var(--radius)] px-2.5 py-2 text-left text-sm font-medium ${
+              nav.kind === "all"
+                ? "bg-[var(--color-accent)] text-[var(--color-accent-foreground)]"
+                : "hover:bg-[var(--color-accent)]"
+            }`}
+          >
+            <Inbox className="h-4 w-4 shrink-0 text-[var(--color-muted-foreground)]" />
+            <span className="flex-1 truncate">{t("all_items")}</span>
+            <span className="text-xs tabular-nums text-[var(--color-muted-foreground)]">
+              {entries.length}
+            </span>
+          </button>
+
+          {/* 文件夹 */}
+          <div className="mt-3 flex items-center justify-between px-2 pb-1">
+            <span className="text-[0.7rem] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+              {t("folders_label")}
+            </span>
+            <button
+              type="button"
+              title={t("new_folder")}
+              onClick={() => addFolderUnder(null)}
+              disabled={busy}
+              className="flex h-5 w-5 items-center justify-center rounded text-[var(--color-muted-foreground)] hover:bg-[var(--color-accent)]"
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </button>
           </div>
-        ) : null}
+          {folders.length === 0 ? (
+            <p className="px-2.5 py-1 text-xs text-[var(--color-muted-foreground)]">—</p>
+          ) : (
+            <div className="flex flex-col">{folderRows(null, 0)}</div>
+          )}
+
+          {/* 标签 */}
+          {allTags.length > 0 ? (
+            <>
+              <div className="mt-3 px-2 pb-1 text-[0.7rem] font-semibold uppercase tracking-wider text-[var(--color-muted-foreground)]">
+                {t("tags_label")}
+              </div>
+              <div className="flex flex-col">
+                {allTags.map((tag) => {
+                  const active = nav.kind === "tag" && nav.name === tag;
+                  return (
+                    <button
+                      key={tag}
+                      type="button"
+                      onClick={() => setNav({ kind: "tag", name: tag })}
+                      className={`flex items-center gap-2 rounded-[var(--radius)] px-2.5 py-1.5 text-left text-sm ${
+                        active
+                          ? "bg-[var(--color-accent)] text-[var(--color-accent-foreground)]"
+                          : "hover:bg-[var(--color-accent)]"
+                      }`}
+                    >
+                      <Hash className="h-3.5 w-3.5 shrink-0 text-[var(--color-muted-foreground)]" />
+                      <span className="truncate">{tag}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : null}
+        </div>
+        <div className="flex items-center gap-2 border-t border-[var(--color-border)] px-4 py-2.5">
+          <Logo className="h-4 w-4 shrink-0" />
+          <span className="truncate text-sm font-semibold">{currentName}</span>
+          <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-[var(--color-muted-foreground)]">
+            <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]" />
+            {t("status_unlocked")} · {t("items_count", entries.length)}
+          </span>
+        </div>
+      </aside>
+
+      {/* 条目列 */}
+      <section className="flex flex-col border-r border-[var(--color-border)] bg-[var(--color-surface)]">
         <div className="flex items-center gap-2 border-b border-[var(--color-border)] p-3">
           <Input
             value={query}
@@ -567,9 +848,9 @@ export function VaultPanel({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm font-medium">{label}</span>
                       <span
-                        className={`block text-xs ${active ? "opacity-80" : "text-[var(--color-muted-foreground)]"}`}
+                        className={`block truncate text-xs ${active ? "opacity-80" : "text-[var(--color-muted-foreground)]"}`}
                       >
-                        {t("bytes_cipher", e.size)}
+                        {e.tags.length > 0 ? e.tags.map((x) => `#${x}`).join(" ") : t("bytes_cipher", e.size)}
                       </span>
                     </span>
                   </button>
@@ -578,11 +859,6 @@ export function VaultPanel({
             })
           )}
         </ul>
-        {/* 列脚:解锁状态 + 条目数 */}
-        <div className="flex items-center gap-1.5 border-t border-[var(--color-border)] px-4 py-2.5 text-xs text-[var(--color-muted-foreground)]">
-          <span className="h-1.5 w-1.5 rounded-full bg-[var(--color-success)]" />
-          {t("status_unlocked")} · {t("items_count", entries.length)}
-        </div>
       </section>
 
       {/* 详情 / 编辑 */}
@@ -624,6 +900,57 @@ export function VaultPanel({
                 {t("btn_cancel")}
               </Button>
             </div>
+            {/* 文件夹 + 标签 */}
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 text-xs text-[var(--color-muted-foreground)]">
+                <Folder className="h-3.5 w-3.5" />
+                <select
+                  value={editFolderId ?? ""}
+                  onChange={(e) => setEditFolderId(e.target.value || null)}
+                  className="h-8 rounded-[var(--radius)] border border-[var(--color-input)] bg-[var(--color-surface)] px-2 text-sm text-[var(--color-foreground)]"
+                >
+                  <option value="">{t("root_folder")}</option>
+                  {folderOptions().map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex min-w-[12rem] flex-1 flex-wrap items-center gap-1.5 rounded-[var(--radius)] border border-[var(--color-input)] bg-[var(--color-surface)] px-2 py-1.5">
+                <Hash className="h-3.5 w-3.5 shrink-0 text-[var(--color-muted-foreground)]" />
+                {editTags.map((tag) => (
+                  <span
+                    key={tag}
+                    className="inline-flex items-center gap-1 rounded-full bg-[var(--color-accent)] px-2 py-0.5 text-xs text-[var(--color-accent-foreground)]"
+                  >
+                    {tag}
+                    <button
+                      type="button"
+                      onClick={() => removeTag(tag)}
+                      className="text-[var(--color-muted-foreground)] hover:text-[var(--color-foreground)]"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+                <input
+                  value={tagInput}
+                  onChange={(e) => setTagInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === ",") {
+                      e.preventDefault();
+                      addTag(tagInput);
+                    } else if (e.key === "Backspace" && !tagInput && editTags.length) {
+                      removeTag(editTags[editTags.length - 1]!);
+                    }
+                  }}
+                  onBlur={() => addTag(tagInput)}
+                  placeholder={t("tags_ph")}
+                  className="h-6 min-w-[6rem] flex-1 bg-transparent text-sm outline-none placeholder:text-[var(--color-muted-foreground)]"
+                />
+              </div>
+            </div>
             <Textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
@@ -642,6 +969,21 @@ export function VaultPanel({
                 {t("btn_edit")}
               </Button>
             </div>
+            {selected && selected.tags.length > 0 ? (
+              <div className="flex flex-wrap items-center gap-1.5">
+                {selected.tags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setNav({ kind: "tag", name: tag })}
+                    className="inline-flex items-center gap-1 rounded-full bg-[var(--color-accent)] px-2.5 py-0.5 text-xs text-[var(--color-accent-foreground)] hover:brightness-95"
+                  >
+                    <Hash className="h-3 w-3" />
+                    {tag}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <article className="flex-1 whitespace-pre-wrap break-words rounded-[var(--radius)] border border-[var(--color-border)] bg-[var(--color-surface)] p-4 font-mono text-sm leading-relaxed">
               {content ? (
                 content

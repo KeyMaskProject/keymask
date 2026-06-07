@@ -2,7 +2,11 @@
 
 pnpm monorepo. Workspaces: `apps/*`, `packages/*`。
 
-端到端加密的网盘文本保管库:**百度网盘**为唯一存储后端,**百度 OAuth** 为唯一登录;内容在浏览器用用户手持的 **BIP39 助记词** 派生密钥加密,服务端与百度只经手密文。
+端到端加密的网盘文本保管库:存储后端支持 **百度网盘** 与 **Google Drive**(各自的 OAuth 登录,二选一);内容在浏览器用用户手持的 **BIP39 助记词** 派生密钥加密,服务端与存储后端只经手密文。
+
+- 百度:OAuth + 沙盒目录 `/apps/Keyper/`。
+- Google:OAuth + Drive **appDataFolder**(应用专属隐藏文件夹,scope 仅 `drive.appdata`,不触碰用户其它文件)。
+- 上层(`apps/web` 的 page / `/api/files*`)只依赖统一抽象 `@/lib/storage`(`getConnectedStorage()`),与具体后端无关。
 
 ## 强制约束 (Hard rules)
 
@@ -18,15 +22,16 @@ pnpm monorepo. Workspaces: `apps/*`, `packages/*`。
 ### 3. 端到端加密:主密钥与明文禁止触达服务端
 
 - 加密/解密只在浏览器,只在 `@keysark/crypto` + client component。**主密钥(助记词派生)、助记词本身、明文内容**禁止出现在任何服务端代码、API 请求/响应体、URL、cookie、日志、DB。
-- 服务端 API 只搬运**不透明 base64 密文**;`@keysark/baidupan` 字节进字节出,内容无关。
+- 服务端 API 只搬运**不透明 base64 密文**;`@keysark/baidupan` 与 `@keysark/googledrive` 字节进字节出,内容无关。
 - 助记词 = BIP39 **12 词 + 英文词表**(对齐 MetaMask)。AES-256-GCM,IV 每次随机 96-bit、绝不复用。
 
 ## 包与目录
 
-- `apps/web` — Next.js 应用。百度登录 + 字节文件 API + 浏览器端加解密保险库 UI。
+- `apps/web` — Next.js 应用。百度/Google 登录 + 统一字节文件 API + 浏览器端加解密保险库 UI。存储抽象在 `src/lib/storage.ts`。
 - `packages/ui` — React + Tailwind + shadcn/ui 封装层。
 - `packages/baidupan` — 百度网盘开放平台客户端 (OAuth + 沙盒文件读写,字节进字节出)。
-- `packages/db` — Drizzle ORM + postgres-js。`storage_account` 存百度 token。
+- `packages/googledrive` — Google Drive 客户端 (OAuth + appDataFolder 文件读写,字节进字节出)。
+- `packages/db` — Drizzle ORM + postgres-js。`storage_account` 按 `(provider, account_key)` 存 baidu/google token。
 - `packages/crypto` — 纯浏览器 E2E 加密 (BIP39 助记词 → AES-256-GCM)。**[plan 002 新增]**
 
 ## 常用命令

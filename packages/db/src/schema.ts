@@ -1,8 +1,9 @@
 import { pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { newId } from "./id";
 
-// 百度网盘授权 token,按 (provider, accountKey) 存。
-// provider 固定 "baidu";accountKey = 百度用户 uk。token 开发期明文存储 —— 上线应加密。
+// 存储后端授权 token,按 (provider, accountKey) 存。
+// provider: "baidu"(accountKey=百度 uk)| "google"(accountKey=Google sub)。
+// token 开发期明文存储 —— 上线应加密。
 export const storageAccount = pgTable(
   "storage_account",
   {

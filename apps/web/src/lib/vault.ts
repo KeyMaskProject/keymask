@@ -20,23 +20,59 @@ function joinPath(base: string, name: string): string {
   return base ? `${base}/${name}` : name;
 }
 
+/** 文件夹:靠 parentId 串成无限嵌套的树;只存在于 index 里(无独立文件)。 */
+export interface FolderMeta {
+  id: string;
+  name: string;
+  parentId: string | null;
+  createdAt: number;
+}
 export interface EntryMeta {
   id: string;
   title: string;
+  folderId: string | null; // null = 根目录
+  tags: string[];
   createdAt: number;
   updatedAt: number;
   size: number;
 }
 export interface IndexDoc {
-  v: 1;
+  v: number;
   entries: EntryMeta[];
+  folders: FolderMeta[];
 }
 export interface EntryDoc {
   id: string;
   title: string;
   content: string;
+  folderId: string | null;
+  tags: string[];
   createdAt: number;
   updatedAt: number;
+}
+
+function emptyIndex(): IndexDoc {
+  return { v: 2, entries: [], folders: [] };
+}
+
+/** 归一化(兼容旧 v1:补 folders/folderId/tags 默认值)。 */
+function normalizeIndex(raw: unknown): IndexDoc {
+  const r = (raw ?? {}) as Partial<IndexDoc>;
+  const folders: FolderMeta[] = Array.isArray(r.folders)
+    ? r.folders.filter((f): f is FolderMeta => !!f && typeof f.id === "string")
+    : [];
+  const entries: EntryMeta[] = Array.isArray(r.entries)
+    ? r.entries.map((e) => ({
+        id: e.id,
+        title: e.title ?? "",
+        folderId: e.folderId ?? null,
+        tags: Array.isArray(e.tags) ? e.tags : [],
+        createdAt: e.createdAt ?? 0,
+        updatedAt: e.updatedAt ?? 0,
+        size: e.size ?? 0,
+      }))
+    : [];
+  return { v: 2, entries, folders };
 }
 
 // ---------- base64 ----------
@@ -166,7 +202,7 @@ function sortEntries(entries: EntryMeta[]): EntryMeta[] {
 
 export class Vault {
   private fileMap = new Map<string, { id: string; size: number }>();
-  private index: IndexDoc = { v: 1, entries: [] };
+  private index: IndexDoc = emptyIndex();
   private readonly dir: string;
   private readonly cache: LocalCache;
 
@@ -203,7 +239,7 @@ export class Vault {
       const idxFile = this.fileMap.get(INDEX_NAME);
       if (idxFile) {
         const bytes = await downloadById(idxFile.id);
-        this.index = await decJson<IndexDoc>(this.key, bytes);
+        this.index = normalizeIndex(await decJson<unknown>(this.key, bytes));
         this.cache.setIndex(b64encode(bytes), false);
         return this.entries;
       }
@@ -212,14 +248,14 @@ export class Vault {
       const cached = this.cache.getIndex();
       if (cached) {
         try {
-          this.index = await decJson<IndexDoc>(this.key, b64decode(cached));
+          this.index = normalizeIndex(await decJson<unknown>(this.key, b64decode(cached)));
         } catch {
-          this.index = { v: 1, entries: [] };
+          this.index = emptyIndex();
         }
       }
       return this.entries;
     }
-    this.index = { v: 1, entries: [] };
+    this.index = emptyIndex();
     return this.entries;
   }
 
@@ -245,7 +281,13 @@ export class Vault {
    * 新建或更新条目。先加密落本地(乐观提交),再同步网盘(条目 + index)。
    * 同步失败不回滚本地副本,返回 synced=false + 错误,失败项保持 pending。
    */
-  async save(input: { id?: string | null; title: string; content: string }): Promise<{
+  async save(input: {
+    id?: string | null;
+    title: string;
+    content: string;
+    folderId?: string | null;
+    tags?: string[];
+  }): Promise<{
     id: string;
     entries: EntryMeta[];
     synced: boolean;
@@ -255,12 +297,24 @@ export class Vault {
     const id = input.id ?? newId();
     const existing = this.index.entries.find((e) => e.id === id);
     const createdAt = existing?.createdAt ?? now;
-    const doc: EntryDoc = { id, title: input.title, content: input.content, createdAt, updatedAt: now };
+    const folderId = input.folderId ?? null;
+    const tags = (input.tags ?? []).map((s) => s.trim()).filter(Boolean);
+    const doc: EntryDoc = {
+      id,
+      title: input.title,
+      content: input.content,
+      folderId,
+      tags,
+      createdAt,
+      updatedAt: now,
+    };
 
     const entryEnvelope = await encJson(this.key, doc);
     const meta: EntryMeta = {
       id,
       title: input.title,
+      folderId,
+      tags,
       createdAt,
       updatedAt: now,
       size: entryEnvelope.byteLength,
@@ -284,6 +338,59 @@ export class Vault {
     }
 
     return { id, entries: this.entries, synced: true };
+  }
+
+  // ---------- 文件夹(仅改 index;本地优先 + 同步) ----------
+  get folders(): FolderMeta[] {
+    return [...this.index.folders];
+  }
+
+  private async persistIndex(): Promise<{ synced: boolean; syncError?: string }> {
+    const env = await encJson(this.key, this.index);
+    this.cache.setIndex(b64encode(env), true);
+    try {
+      await uploadFile(this.indexPath(), env);
+      this.cache.clearIndexPending();
+      return { synced: true };
+    } catch (err) {
+      return { synced: false, syncError: String(err) };
+    }
+  }
+
+  async addFolder(
+    name: string,
+    parentId: string | null,
+  ): Promise<{ id: string; folders: FolderMeta[]; synced: boolean; syncError?: string }> {
+    const id = newId();
+    this.index.folders.push({ id, name: name.trim(), parentId, createdAt: Date.now() });
+    const res = await this.persistIndex();
+    return { id, folders: this.folders, ...res };
+  }
+
+  async renameFolder(
+    id: string,
+    name: string,
+  ): Promise<{ folders: FolderMeta[]; synced: boolean; syncError?: string }> {
+    const f = this.index.folders.find((x) => x.id === id);
+    if (f) f.name = name.trim();
+    const res = await this.persistIndex();
+    return { folders: this.folders, ...res };
+  }
+
+  /** 删除文件夹:其子文件夹与条目都上移到被删文件夹的父级(不丢数据)。 */
+  async deleteFolder(id: string): Promise<{
+    folders: FolderMeta[];
+    entries: EntryMeta[];
+    synced: boolean;
+    syncError?: string;
+  }> {
+    const target = this.index.folders.find((x) => x.id === id);
+    const parentId = target?.parentId ?? null;
+    for (const f of this.index.folders) if (f.parentId === id) f.parentId = parentId;
+    for (const e of this.index.entries) if (e.folderId === id) e.folderId = parentId;
+    this.index.folders = this.index.folders.filter((x) => x.id !== id);
+    const res = await this.persistIndex();
+    return { folders: this.folders, entries: this.entries, ...res };
   }
 
   /** 手动重试:把本地 pending 的条目与 index 重新推送到网盘。 */

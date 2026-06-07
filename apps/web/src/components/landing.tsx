@@ -35,6 +35,11 @@ export function Landing({ error }: { error?: string }) {
           <Wordmark className="text-lg" />
           <div className="flex items-center gap-3">
             <HeaderControls />
+            <a href="/api/auth/google">
+              <Button variant="outline" size="sm">
+                {t("nav_connect_google")}
+              </Button>
+            </a>
             <a href="/api/auth/login">
               <Button variant="outline" size="sm">
                 {t("nav_connect")}
@@ -58,8 +63,13 @@ export function Landing({ error }: { error?: string }) {
             {t("hero_subtitle")}
           </p>
           <div className="mt-9 flex flex-col items-center gap-3 sm:flex-row">
-            <a href="/api/auth/login">
+            <a href="/api/auth/google">
               <Button size="lg" className="px-8">
+                {t("cta_google")}
+              </Button>
+            </a>
+            <a href="/api/auth/login">
+              <Button size="lg" variant="outline" className="px-8">
                 {t("cta_primary")}
               </Button>
             </a>

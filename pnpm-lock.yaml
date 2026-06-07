@@ -32,6 +32,9 @@ importers:
       '@keysark/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@keysark/googledrive':
+        specifier: workspace:*
+        version: link:../../packages/googledrive
       '@keysark/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -90,6 +93,8 @@ importers:
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
+
+  packages/googledrive: {}
 
   packages/ui:
     dependencies:
