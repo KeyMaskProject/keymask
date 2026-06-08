@@ -25,6 +25,24 @@ export interface DriveOptions {
   mode: "appdata" | "folder";
   /** folder 模式必填:根下可见文件夹名 */
   folderName?: string;
+  /** 跨请求复用的目录/文件 id 缓存(由调用方按账号持有);不传则每个实例自建,仅实例内有效。 */
+  cache?: DriveCache;
+}
+
+/**
+ * 跨请求/跨实例共享的解析缓存:目录与文件的相对路径 → Drive id。
+ * 服务端每个 HTTP 请求都新建一个 GoogleDriveClient,若缓存只在实例内,
+ * 每次保存都要重新 files.list 走一遍目录树(慢)。把它按账号持有可消除重复解析。
+ * inflight 用于并发去重:同一路径同时被多次解析(如并行上传)只发一次请求,避免重复建目录。
+ */
+export interface DriveCache {
+  folders: Map<string, string>; // relPath("" = 存储根) → folderId
+  files: Map<string, string>; // relPath → fileId
+  inflight: Map<string, Promise<string | null>>; // 解析中的目录路径
+}
+
+export function newDriveCache(): DriveCache {
+  return { folders: new Map(), files: new Map(), inflight: new Map() };
 }
 
 interface RawFile {
@@ -51,10 +69,10 @@ export class GoogleDriveClient {
   private readonly folderName: string;
   // Drive files.list 的 spaces 参数:appData 模式限定 appDataFolder,folder 模式用默认 drive。
   private readonly spaces: string;
-  // 相对路径 → folderId 缓存(单实例内,避免重复解析目录树);"" 键 = 存储根。
-  private readonly folderCache = new Map<string, string>();
-  // folder 模式下根文件夹的解析/创建去重(避免并发各建一个同名文件夹)。
-  private rootIdPromise: Promise<string> | null = null;
+  // 相对路径 → id 缓存(可跨请求共享);folders[""] = 存储根。
+  private readonly folderCache: Map<string, string>;
+  private readonly fileCache: Map<string, string>;
+  private readonly inflight: Map<string, Promise<string | null>>;
 
   constructor(
     private readonly accessToken: string,
@@ -66,6 +84,10 @@ export class GoogleDriveClient {
     if (this.mode === "folder" && !this.folderName) {
       throw new Error("google drive folder mode requires a folderName");
     }
+    const cache = opts.cache ?? newDriveCache();
+    this.folderCache = cache.folders;
+    this.fileCache = cache.files;
+    this.inflight = cache.inflight;
     if (this.mode === "appdata") this.folderCache.set("", APPDATA);
   }
 
@@ -123,39 +145,42 @@ export class GoogleDriveClient {
     return data.id;
   }
 
-  /** 解析存储根的 folderId。appdata 模式恒为 appDataFolder;folder 模式按需在 My Drive 根下创建可见文件夹。 */
-  private async rootId(create: boolean): Promise<string | null> {
-    if (this.mode === "appdata") return APPDATA;
-    const cached = this.folderCache.get("");
-    if (cached) return cached;
-    if (!this.rootIdPromise) {
-      this.rootIdPromise = (async () => {
-        const existing = await this.findChild(MYDRIVE_ROOT, this.folderName, { folder: true });
-        // 注:drive.file scope 只能看到本应用创建的文件;若用户手动建了同名文件夹,这里看不到,会另建一个。
-        const id = existing ? existing.id : await this.createFolder(MYDRIVE_ROOT, this.folderName);
-        this.folderCache.set("", id);
+  /**
+   * 缓存 + 并发去重地解析一个目录路径。命中 folderCache 直接返回;
+   * 否则在 inflight 里登记一次解析,后续(本请求或并发请求)共享同一 promise,避免重复 list/建目录。
+   */
+  private resolvePath(
+    path: string,
+    resolve: () => Promise<string | null>,
+  ): Promise<string | null> {
+    const cached = this.folderCache.get(path);
+    if (cached) return Promise.resolve(cached);
+    const inflight = this.inflight.get(path);
+    if (inflight) return inflight;
+    const p = resolve()
+      .then((id) => {
+        if (id) this.folderCache.set(path, id); // 只缓存成功结果
         return id;
-      })().catch((err) => {
-        this.rootIdPromise = null; // 失败不缓存,允许重试
-        throw err;
-      });
-    }
-    // 只读场景(create=false)且根文件夹尚不存在时,不应创建:先探一次,存在才返回。
-    if (!create && !this.folderCache.has("")) {
+      })
+      .finally(() => this.inflight.delete(path));
+    this.inflight.set(path, p);
+    return p;
+  }
+
+  /** 解析存储根的 folderId。appdata 恒为 appDataFolder;folder 模式按需在 My Drive 根下创建可见文件夹。 */
+  private rootId(create: boolean): Promise<string | null> {
+    if (this.mode === "appdata") return Promise.resolve(APPDATA);
+    return this.resolvePath("", async () => {
       const existing = await this.findChild(MYDRIVE_ROOT, this.folderName, { folder: true });
-      if (!existing) return null;
-      this.folderCache.set("", existing.id);
-      return existing.id;
-    }
-    return this.rootIdPromise;
+      // 注:drive.file scope 只能看到本应用创建的文件;用户手动建的同名文件夹这里看不到,会另建一个。
+      if (existing) return existing.id;
+      return create ? await this.createFolder(MYDRIVE_ROOT, this.folderName) : null;
+    });
   }
 
   /** 解析相对目录路径为 folderId。create=true 时按需创建缺失的层级。 */
   private async resolveFolder(dir: string, create: boolean): Promise<string | null> {
     const clean = dir.replace(/^\/+|\/+$/g, "").trim();
-    const cached = this.folderCache.get(clean);
-    if (cached) return cached;
-
     const root = await this.rootId(create);
     if (!root) return null;
     if (!clean) return root;
@@ -165,15 +190,13 @@ export class GoogleDriveClient {
     for (const segment of clean.split("/")) {
       if (!segment) continue;
       path = path ? `${path}/${segment}` : segment;
-      const hit = this.folderCache.get(path);
-      if (hit) {
-        parentId = hit;
-        continue;
-      }
-      const existing = await this.findChild(parentId, segment, { folder: true });
-      const folderId = existing ? existing.id : create ? await this.createFolder(parentId, segment) : null;
+      const here = parentId;
+      const folderId = await this.resolvePath(path, async () => {
+        const existing = await this.findChild(here, segment, { folder: true });
+        if (existing) return existing.id;
+        return create ? await this.createFolder(here, segment) : null;
+      });
       if (!folderId) return null;
-      this.folderCache.set(path, folderId);
       parentId = folderId;
     }
     return parentId;
@@ -197,30 +220,24 @@ export class GoogleDriveClient {
     }));
   }
 
-  /** 上传/覆盖文件到相对路径(目录按需创建)。同名文件存在则更新内容,否则新建。 */
-  async upload(relPath: string, data: Uint8Array): Promise<void> {
-    const clean = relPath.replace(/^\/+/, "").trim();
-    const slash = clean.lastIndexOf("/");
-    const dir = slash >= 0 ? clean.slice(0, slash) : "";
-    const name = slash >= 0 ? clean.slice(slash + 1) : clean;
-    if (!name) throw new Error(`invalid upload path: ${relPath}`);
-
-    const folderId = await this.resolveFolder(dir, true);
-    if (!folderId) throw new Error(`cannot resolve folder: ${dir}`);
-
-    const existing = await this.findChild(folderId, name);
-    if (existing) {
-      // 更新已有文件内容(media)
-      const res = await fetch(`${DRIVE_UPLOAD}/${existing.id}?uploadType=media`, {
-        method: "PATCH",
-        headers: { ...this.authHeader, "Content-Type": "application/octet-stream" },
-        body: data as unknown as BodyInit,
-      });
-      if (!res.ok) throw new Error(`google drive update ${res.status}: ${await res.text()}`);
-      return;
+  /** 更新已有文件内容(media PATCH)。返回结果,404 交由调用方判断「文件已不在」回退新建。 */
+  private async patchMedia(
+    fileId: string,
+    data: Uint8Array,
+  ): Promise<{ ok: boolean; status: number }> {
+    const res = await fetch(`${DRIVE_UPLOAD}/${fileId}?uploadType=media`, {
+      method: "PATCH",
+      headers: { ...this.authHeader, "Content-Type": "application/octet-stream" },
+      body: data as unknown as BodyInit,
+    });
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`google drive update ${res.status}: ${await res.text()}`);
     }
+    return { ok: res.ok, status: res.status };
+  }
 
-    // 新建文件(multipart/related:元数据 + 内容)
+  /** 新建文件(multipart/related:元数据 + 内容),返回新文件 id。 */
+  private async createFile(folderId: string, name: string, data: Uint8Array): Promise<string> {
     const boundary = `keysark-${Date.now()}`;
     const meta = JSON.stringify({ name, parents: [folderId] });
     const enc = new TextEncoder();
@@ -240,6 +257,44 @@ export class GoogleDriveClient {
       body: body as unknown as BodyInit,
     });
     if (!res.ok) throw new Error(`google drive create ${res.status}: ${await res.text()}`);
+    const out = (await res.json()) as { id: string };
+    return out.id;
+  }
+
+  /**
+   * 上传/覆盖文件到相对路径(目录按需创建)。
+   * 热路径(更新已有条目/index)走 fileCache 直接 PATCH,省掉一次 findChild list;
+   * 缓存未命中或文件已不在(404)再回退 findChild → 更新/新建,并回填缓存。
+   */
+  async upload(relPath: string, data: Uint8Array): Promise<void> {
+    const clean = relPath.replace(/^\/+/, "").trim();
+    const slash = clean.lastIndexOf("/");
+    const dir = slash >= 0 ? clean.slice(0, slash) : "";
+    const name = slash >= 0 ? clean.slice(slash + 1) : clean;
+    if (!name) throw new Error(`invalid upload path: ${relPath}`);
+
+    const folderId = await this.resolveFolder(dir, true);
+    if (!folderId) throw new Error(`cannot resolve folder: ${dir}`);
+
+    // 已知 fileId(更新热路径)→ 直接 PATCH。404 说明文件已不在,清缓存回退。
+    const cachedId = this.fileCache.get(clean);
+    if (cachedId) {
+      const res = await this.patchMedia(cachedId, data);
+      if (res.ok) return;
+      this.fileCache.delete(clean);
+    }
+
+    const existing = await this.findChild(folderId, name);
+    if (existing) {
+      this.fileCache.set(clean, existing.id);
+      const res = await this.patchMedia(existing.id, data);
+      if (res.ok) return;
+      // 极少见:findChild 命中后文件又被删 → 清缓存,落到新建。
+      this.fileCache.delete(clean);
+    }
+
+    const id = await this.createFile(folderId, name, data);
+    this.fileCache.set(clean, id);
   }
 
   /** 解析相对路径对应的文件,返回其 id 与 webViewLink(用于「在 Drive 中打开」)。不存在返回 null。 */

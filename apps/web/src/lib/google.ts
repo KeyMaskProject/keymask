@@ -7,7 +7,9 @@ import {
   exchangeCodeForToken,
   fetchUserInfo,
   loadGoogleConfig,
+  newDriveCache,
   refreshAccessToken,
+  type DriveCache,
   type DriveOptions,
   type GoogleConfig,
 } from "@keysark/googledrive";
@@ -29,6 +31,18 @@ function driveOptions(config: GoogleConfig): DriveOptions {
   return config.driveFolder
     ? { mode: "folder", folderName: config.driveFolder }
     : { mode: "appdata" };
+}
+
+// 按账号(sub)持有的目录/文件 id 缓存,跨请求复用 —— 避免每次保存重新 files.list 走目录树。
+// 服务进程内存活;token 刷新不影响(id 与 token 无关)。
+const driveCaches = new Map<string, DriveCache>();
+function driveCacheFor(sub: string): DriveCache {
+  let c = driveCaches.get(sub);
+  if (!c) {
+    c = newDriveCache();
+    driveCaches.set(sub, c);
+  }
+  return c;
 }
 
 export interface ConnectedGoogle {
@@ -63,7 +77,13 @@ export async function getConnectedGoogleBySub(sub: string): Promise<ConnectedGoo
     });
   }
 
-  return { client: new GoogleDriveClient(accessToken, driveOptions(config)), sub };
+  return {
+    client: new GoogleDriveClient(accessToken, {
+      ...driveOptions(config),
+      cache: driveCacheFor(sub),
+    }),
+    sub,
+  };
 }
 
 /** 发起 Google 授权:state 防 CSRF → 重定向授权页。 */

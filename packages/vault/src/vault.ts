@@ -184,14 +184,19 @@ export class Vault {
     this.cache.setEntry(id, b64encode(entryEnvelope), true);
     this.cache.setIndex(b64encode(indexEnvelope), true);
 
-    // 2) 同步网盘
-    try {
-      await this.transport.upload(this.itemPath(id), entryEnvelope);
-      this.cache.clearPending(id);
-      await this.transport.upload(this.indexPath(), indexEnvelope);
-      this.cache.clearIndexPending();
-    } catch (err) {
-      return { id, entries: this.entries, synced: false, syncError: String(err) };
+    // 2) 同步网盘:条目与 index 互不依赖,并行上传;各自成功即清各自 pending。
+    //    部分成功(一个成功一个失败)留失败项 pending,返回 synced=false。
+    const results = await Promise.allSettled([
+      this.transport
+        .upload(this.itemPath(id), entryEnvelope)
+        .then(() => this.cache.clearPending(id)),
+      this.transport
+        .upload(this.indexPath(), indexEnvelope)
+        .then(() => this.cache.clearIndexPending()),
+    ]);
+    const failed = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+    if (failed) {
+      return { id, entries: this.entries, synced: false, syncError: String(failed.reason) };
     }
     return { id, entries: this.entries, synced: true };
   }

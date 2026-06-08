@@ -11,6 +11,8 @@ export {
 } from "./oauth";
 export {
   GoogleDriveClient,
+  newDriveCache,
   type DriveFile,
   type DriveOptions,
+  type DriveCache,
 } from "./client";
