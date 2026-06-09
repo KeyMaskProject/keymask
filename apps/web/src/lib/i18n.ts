@@ -211,6 +211,17 @@ const zh = {
   st_upload_fail: (e: string) => `上传失败: ${e}`,
   st_downloading: "下载解密中 …",
   st_download_fail: (e: string) => `下载失败: ${e}`,
+
+  // 文件在线预览
+  preview_loading: "预览加载中 …",
+  preview_unsupported: "该文件类型暂不支持预览,可下载查看",
+  preview_too_large: (max: string) => `文件超过 ${max},不预览,可下载查看`,
+  preview_decode_fail: "无法以文本解码(可能是二进制文件),可下载查看",
+  preview_load_fail: (e: string) => `预览加载失败: ${e}`,
+  pdf_page: (n: number, total: number) => `第 ${n} / ${total} 页`,
+  pdf_prev: "上一页",
+  pdf_next: "下一页",
+  pdf_render_fail: "PDF 渲染失败,可下载查看",
 } satisfies Record<string, Msg>;
 
 const en: typeof zh = {
@@ -406,6 +417,17 @@ const en: typeof zh = {
   st_upload_fail: (e: string) => `Upload failed: ${e}`,
   st_downloading: "Downloading & decrypting …",
   st_download_fail: (e: string) => `Download failed: ${e}`,
+
+  // File preview
+  preview_loading: "Loading preview …",
+  preview_unsupported: "Preview not supported for this file type — download to view",
+  preview_too_large: (max: string) => `File exceeds ${max} — download to view`,
+  preview_decode_fail: "Cannot decode as text (likely binary) — download to view",
+  preview_load_fail: (e: string) => `Preview failed to load: ${e}`,
+  pdf_page: (n: number, total: number) => `Page ${n} / ${total}`,
+  pdf_prev: "Previous",
+  pdf_next: "Next",
+  pdf_render_fail: "PDF failed to render — download to view",
 };
 
 export type MsgKey = keyof typeof zh;

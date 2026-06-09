@@ -1,6 +1,47 @@
 @import "@keyper/ui/styles.css";
 
 /*
+ * highlight.js 词法着色。色板走 CSS 变量,跟随主题:
+ * - 显式浅色(<html class="light">)/ 无 class 的浅色系统 → :root 默认
+ * - 显式深色(<html class="dark">)→ .dark 覆盖
+ * - 无 class 的深色系统 → prefers-color-scheme 覆盖
+ * 只定义 json/yaml/ini 用到的 token,避免引入整套主题 CSS。
+ */
+:root {
+  --hl-key: #0550ae;
+  --hl-string: #116329;
+  --hl-number: #953800;
+  --hl-comment: #6e7781;
+  --hl-section: #8250df;
+}
+.dark {
+  --hl-key: #79c0ff;
+  --hl-string: #7ee787;
+  --hl-number: #ffa657;
+  --hl-comment: #8b949e;
+  --hl-section: #d2a8ff;
+}
+@media (prefers-color-scheme: dark) {
+  html:not(.light):not(.dark) {
+    --hl-key: #79c0ff;
+    --hl-string: #7ee787;
+    --hl-number: #ffa657;
+    --hl-comment: #8b949e;
+    --hl-section: #d2a8ff;
+  }
+}
+.hljs-attr,
+.hljs-attribute { color: var(--hl-key); }
+.hljs-string,
+.hljs-bullet { color: var(--hl-string); }
+.hljs-number,
+.hljs-literal { color: var(--hl-number); }
+.hljs-comment,
+.hljs-quote { color: var(--hl-comment); }
+.hljs-section,
+.hljs-meta { color: var(--hl-section); }
+
+/*
  * 保存中:让编辑头(vault-item-edit-header)的 45° 斜纹背景沿条纹轴向滑动。
  * 条纹周期 20px;沿 x 轴平移 28.284px(=20px ÷ cos45°)恰好等于一个周期在轴
  * 方向上的投影 → 无缝循环。reduced-motion 下静止。

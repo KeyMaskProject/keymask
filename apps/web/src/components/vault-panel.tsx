@@ -58,6 +58,7 @@ import type { MsgKey } from "@/lib/i18n";
 import { saveKey, loadKey, deleteKey } from "@/lib/key-store";
 import { exportVaultBackupPdf } from "@/lib/vault-pdf";
 import { testId } from "@/lib/test-id";
+import { FilePreview } from "./file-preview/FilePreview";
 import type { StorageProvider } from "@/lib/storage";
 import {
   b64decode,
@@ -1579,7 +1580,8 @@ export function VaultPanel({
                   </h2>
                 </div>
                 {selected?.kind === "file" ? (
-                  // ---- 文件条目:文件名 + 大小 + 下载(无文本正文) ----
+                  // ---- 文件条目:文件名 + 大小 + 下载 + 在线预览 ----
+                  <div className="space-y-4">
                   <div
                     {...testId("vault-item-file-card")}
                     className="flex items-center gap-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-accent)] px-4 py-4"
@@ -1600,6 +1602,12 @@ export function VaultPanel({
                       <Download className="h-3.5 w-3.5" />
                       {t("file_download")}
                     </Button>
+                  </div>
+                  <FilePreview
+                    entryId={selected.id}
+                    filename={selected.filename || previewName}
+                    loadBytes={(id) => vaultRef.current!.openFile(id)}
+                  />
                   </div>
                 ) : (
                   <div {...testId("vault-item-content-card")} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-accent)] px-4 py-3">

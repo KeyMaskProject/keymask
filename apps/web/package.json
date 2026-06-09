@@ -17,9 +17,11 @@
     "@keysark/googledrive": "workspace:*",
     "@keysark/ui": "workspace:*",
     "@keysark/vault": "workspace:*",
+    "highlight.js": "^11.11.1",
     "jspdf": "^4.2.1",
     "lucide-react": "^1.17.0",
     "next": "^16.2.7",
+    "pdfjs-dist": "^6.0.227",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },
