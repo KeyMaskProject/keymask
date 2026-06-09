@@ -24,6 +24,8 @@ export interface StorageClient {
   upload(path: string, bytes: Uint8Array): Promise<void>;
   /** 按文件 id 下载原始字节。 */
   download(fileId: string): Promise<Uint8Array>;
+  /** 删除相对路径的文件;不存在应幂等不报错。 */
+  delete(path: string): Promise<void>;
 }
 export interface ConnectedStorage {
   provider: StorageProvider;
@@ -48,6 +50,7 @@ function wrapGoogle(google: ConnectedGoogle): ConnectedStorage {
       list: (dir) => c.list(dir),
       upload: (path, bytes) => c.upload(path, bytes),
       download: (id) => c.download(id),
+      delete: (path) => c.remove(path),
     },
   };
 }
@@ -79,6 +82,14 @@ export async function getConnectedStorage(): Promise<ConnectedStorage | null> {
           await c.upload(path, bytes, 3);
         },
         download: (id) => c.download(Number(id)),
+        async delete(path) {
+          // 百度删除不存在的路径会报 errno;delete 语义要求幂等 → 吞掉错误(best-effort)。
+          try {
+            await c.remove([path]);
+          } catch (err) {
+            console.warn("baidu delete ignored", path, String(err));
+          }
+        },
       },
     };
   }

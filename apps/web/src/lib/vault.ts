@@ -10,19 +10,7 @@ import {
   type StorageTransport,
 } from "@keysark/vault";
 
-// ---------- 浏览器密文中转:/api/files* ----------
-function b64encode(u: Uint8Array): string {
-  let s = "";
-  for (const b of u) s += String.fromCharCode(b);
-  return btoa(s);
-}
-function b64decode(s: string): Uint8Array {
-  const bin = atob(s);
-  const u = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
-  return u;
-}
-
+// ---------- 浏览器密文中转:/api/files*(二进制端点,无 base64) ----------
 export const browserTransport: StorageTransport = {
   async list(dir) {
     const res = await fetch(`/api/files?dir=${encodeURIComponent(dir)}`);
@@ -33,19 +21,24 @@ export const browserTransport: StorageTransport = {
     return m;
   },
   async upload(path, bytes) {
-    const res = await fetch("/api/files", {
+    // 走二进制端点:octet-stream 直传,无 base64 膨胀(文本小文件同样受益)。
+    // 复制成独立 ArrayBuffer 再传,规避 Uint8Array 视图/SharedArrayBuffer 在 BodyInit 上的类型问题。
+    const res = await fetch(`/api/files/blob?path=${encodeURIComponent(path)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path, contentB64: b64encode(bytes) }),
+      headers: { "Content-Type": "application/octet-stream" },
+      body: bytes.slice().buffer,
     });
     const data = (await res.json()) as { ok?: boolean; message?: string };
     if (!res.ok || !data.ok) throw new Error(data.message ?? `HTTP ${res.status}`);
   },
   async download(fileId) {
-    const res = await fetch(`/api/files/content?fileId=${encodeURIComponent(fileId)}`);
+    const res = await fetch(`/api/files/blob?fileId=${encodeURIComponent(fileId)}`);
     if (!res.ok) throw new Error(`download HTTP ${res.status}`);
-    const data = (await res.json()) as { contentB64: string };
-    return b64decode(data.contentB64);
+    return new Uint8Array(await res.arrayBuffer());
+  },
+  async delete(path) {
+    const res = await fetch(`/api/files?path=${encodeURIComponent(path)}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(`delete HTTP ${res.status}`);
   },
 };
 

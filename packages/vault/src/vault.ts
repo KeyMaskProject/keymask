@@ -10,7 +10,12 @@
 //
 // E2E:主密钥只在内存;落本地/上网盘的都是不透明密文信封。transport 只搬运密文。
 import { newId } from "@keysark/db/id";
-import { decryptFromEnvelope, encryptToEnvelope } from "@keysark/crypto";
+import {
+  decryptBytesFromBlob,
+  decryptFromEnvelope,
+  encryptBytesToBlob,
+  encryptToEnvelope,
+} from "@keysark/crypto";
 import {
   INDEX_NAME,
   ITEMS_DIR,
@@ -45,6 +50,10 @@ function normalizeIndex(raw: unknown): IndexDoc {
         createdAt: e.createdAt ?? 0,
         updatedAt: e.updatedAt ?? 0,
         size: e.size ?? 0,
+        kind: e.kind ?? "text", // 旧数据无 kind → 视为文本
+        ...(e.filename !== undefined ? { filename: e.filename } : {}),
+        ...(e.mimeType !== undefined ? { mimeType: e.mimeType } : {}),
+        ...(e.fileSize !== undefined ? { fileSize: e.fileSize } : {}),
       }))
     : [];
   return { v: 2, entries, folders };
@@ -103,6 +112,9 @@ export class Vault {
   }
   private itemPath(id: string): string {
     return joinPath(this.itemsDir(), `${id}.json`);
+  }
+  private itemBlobPath(id: string): string {
+    return joinPath(this.itemsDir(), `${id}.bin`);
   }
 
   get entries(): EntryMeta[] {
@@ -202,13 +214,98 @@ export class Vault {
   }
 
   /**
-   * 删除条目:从 index 摘除 + 清本地缓存,再同步 index。
-   * 注:当前 StorageTransport 无 delete 原语,网盘上的条目文件会成为不被 index 引用的孤儿
-   * (不再出现在任何列表/检索中)。引入 transport.delete 后可真正清除 —— 见 feedback。
+   * 新建或更新文件条目。文件正文(原始字节)加密成二进制信封,存独立 <id>.bin;
+   * 元信息(title/filename/mimeType/fileSize,content 留空)走 JSON 信封存 <id>.json。
+   * 加密只在调用方(浏览器)内存做,网盘只见密文。本地优先 + 并行同步 + pending 同 save。
+   */
+  async saveFile(input: {
+    id?: string | null;
+    title: string;
+    filename: string;
+    mimeType: string;
+    bytes: Uint8Array;
+    folderId?: string | null;
+  }): Promise<{ id: string; entries: EntryMeta[]; synced: boolean; syncError?: string }> {
+    const now = Date.now();
+    const id = input.id ?? newId();
+    const existing = this.index.entries.find((e) => e.id === id);
+    const createdAt = existing?.createdAt ?? now;
+    const folderId = input.folderId ?? null;
+    const fileSize = input.bytes.byteLength;
+
+    const doc: EntryDoc = {
+      id,
+      title: input.title,
+      content: "",
+      folderId,
+      createdAt,
+      updatedAt: now,
+      kind: "file",
+      filename: input.filename,
+      mimeType: input.mimeType,
+      fileSize,
+    };
+
+    const blob = await encryptBytesToBlob(this.key, input.bytes);
+    const entryEnvelope = await encJson(this.key, doc);
+    const meta: EntryMeta = {
+      id,
+      title: input.title,
+      folderId,
+      createdAt,
+      updatedAt: now,
+      size: entryEnvelope.byteLength,
+      kind: "file",
+      filename: input.filename,
+      mimeType: input.mimeType,
+      fileSize,
+    };
+    if (existing) Object.assign(existing, meta);
+    else this.index.entries.push(meta);
+    const indexEnvelope = await encJson(this.key, this.index);
+
+    // 本地优先:元信息信封进缓存(标 pending);文件 blob 不进 localStorage(可达 100MB,会爆配额)。
+    this.cache.setEntry(id, b64encode(entryEnvelope), true);
+    this.cache.setIndex(b64encode(indexEnvelope), true);
+
+    // 同步网盘:blob、条目、index 互不依赖,并行上传;各自成功即清各自 pending。
+    const results = await Promise.allSettled([
+      this.transport.upload(this.itemBlobPath(id), blob),
+      this.transport
+        .upload(this.itemPath(id), entryEnvelope)
+        .then(() => this.cache.clearPending(id)),
+      this.transport
+        .upload(this.indexPath(), indexEnvelope)
+        .then(() => this.cache.clearIndexPending()),
+    ]);
+    const failed = results.find((r) => r.status === "rejected") as PromiseRejectedResult | undefined;
+    if (failed) {
+      return { id, entries: this.entries, synced: false, syncError: String(failed.reason) };
+    }
+    return { id, entries: this.entries, synced: true };
+  }
+
+  /** 打开文件条目:下载 <id>.bin 密文信封 → 解密 → 原始字节。 */
+  async openFile(id: string): Promise<Uint8Array> {
+    const itemsMap = await this.transport.list(this.itemsDir());
+    const f = itemsMap.get(`${id}.bin`);
+    if (!f) throw new Error("file blob not found on netdisk");
+    const blob = await this.transport.download(f.id);
+    return decryptBytesFromBlob(this.key, blob);
+  }
+
+  /**
+   * 删除条目:从 index 摘除 + 清本地缓存,经 transport.delete 真正删除网盘文件。
+   * 文件条目额外删 <id>.bin。删除失败不阻塞 index 同步(下次手工清理仍可)。
    */
   async remove(id: string): Promise<{ entries: EntryMeta[]; synced: boolean; syncError?: string }> {
+    const target = this.index.entries.find((e) => e.id === id);
     this.index.entries = this.index.entries.filter((e) => e.id !== id);
     this.cache.clearPending(id);
+    // 先删网盘上的条目文件(幂等;失败仅记 console,不影响 index 摘除)。
+    const paths = [this.itemPath(id)];
+    if (target?.kind === "file") paths.push(this.itemBlobPath(id));
+    await Promise.allSettled(paths.map((p) => this.transport.delete(p)));
     const res = await this.persistIndex();
     return { entries: this.entries, ...res };
   }

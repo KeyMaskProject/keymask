@@ -36,6 +36,7 @@ import {
   ChevronRight,
   Download,
   ExternalLink,
+  File as FileIcon,
   FileText,
   Folder,
   FolderPlus,
@@ -46,6 +47,7 @@ import {
   Pencil,
   Plus,
   Trash2,
+  Upload,
 } from "lucide-react";
 import { Logo, Wordmark } from "./brand";
 import { HeaderControls } from "./controls";
@@ -84,6 +86,20 @@ interface SortSpec {
 const DEFAULT_SORT: SortSpec = { key: "updated", dir: "desc" };
 const VIEW_KEY = "keysark.vault.viewMode";
 const SORT_KEY = "keysark.vault.sort";
+
+// 文件加密上传:单文件明文上限 100MB(对齐 proposal;加密一次性在内存做,不分片)。
+const MAX_FILE_BYTES = 100 * 1024 * 1024;
+function humanSize(n: number): string {
+  if (n < 1024) return `${n} B`;
+  const units = ["KB", "MB", "GB"];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toFixed(v >= 100 || Number.isInteger(v) ? 0 : 1)} ${units[i]}`;
+}
 // 排序下拉的固定选项(key+dir 组合),i18n 词条一一对应。
 const SORT_OPTIONS: { key: SortKey; dir: SortDir; label: MsgKey }[] = [
   { key: "updated", dir: "desc", label: "sort_updated_desc" },
@@ -143,6 +159,9 @@ export function VaultPanel({
   );
 
   const vaultRef = useRef<Vault | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // 上传文件时记住目标文件夹(隐藏 input 的 change 回调里取用)。
+  const pendingUploadFolder = useRef<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -522,6 +541,75 @@ export function VaultPanel({
       setStatus(result.synced ? t("st_saved") : t("st_saved_local", result.syncError ?? ""));
     } catch (err) {
       setStatus(t("st_save_fail", String(err)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // 触发隐藏的文件选择框(上传文件条目)。
+  function pickFile(folderId: string | null = nav.kind === "folder" ? nav.id : null) {
+    pendingUploadFolder.current = folderId;
+    fileInputRef.current?.click();
+  }
+
+  // 选中文件后:前端校验大小 → 读字节 → 浏览器内加密上传(saveFile)。明文/密钥不离开浏览器。
+  async function onPickedFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = ""; // 允许重复选同一文件
+    if (!file) return;
+    const v = vaultRef.current;
+    if (!v) return;
+    if (file.size > MAX_FILE_BYTES) {
+      setStatus(t("file_too_large", humanSize(MAX_FILE_BYTES)));
+      return;
+    }
+    discardDraft();
+    setBusy(true);
+    setStatus(t("st_uploading", file.name));
+    try {
+      const bytes = new Uint8Array(await file.arrayBuffer());
+      const result = await v.saveFile({
+        title: file.name,
+        filename: file.name,
+        mimeType: file.type || "application/octet-stream",
+        bytes,
+        folderId: pendingUploadFolder.current,
+      });
+      setEntries(result.entries);
+      setSelectedId(result.id);
+      setContent("");
+      setMode("preview");
+      setPending(v.pendingCount());
+      setStatus(result.synced ? t("st_uploaded") : t("st_uploaded_local", result.syncError ?? ""));
+    } catch (err) {
+      setStatus(t("st_upload_fail", String(err)));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // 下载文件条目:openFile 取回明文字节 → Blob → 触发浏览器下载。解密只在浏览器。
+  async function downloadFile(meta: EntryMeta) {
+    const v = vaultRef.current;
+    if (!v) return;
+    setBusy(true);
+    setStatus(t("st_downloading"));
+    try {
+      const bytes = await v.openFile(meta.id);
+      const blob = new Blob([bytes as unknown as BlobPart], {
+        type: meta.mimeType || "application/octet-stream",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = meta.filename || meta.title || "download";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url); // 100MB 用完即释放,避免内存泄漏
+      setStatus(null);
+    } catch (err) {
+      setStatus(t("st_download_fail", String(err)));
     } finally {
       setBusy(false);
     }
@@ -1186,10 +1274,27 @@ export function VaultPanel({
     );
   }
 
+  // 文件条目的方形图标(替代文本条目的首字母头像)。
+  function fileIconBox() {
+    return (
+      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[var(--color-primary)] to-[oklch(0.55_0.21_292)] text-[var(--color-primary-foreground)] shadow-sm">
+        <FileIcon className="h-7 w-7" />
+      </span>
+    );
+  }
+
   const previewName = selected?.title || t("untitled");
 
   return (
     <div {...testId("vault-workbench")} className="grid h-screen grid-cols-[20rem_1fr] overflow-hidden">
+      {/* 隐藏文件选择框:上传文件条目时由 pickFile() 触发 */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        onChange={onPickedFile}
+        aria-hidden="true"
+      />
       {/* 导航:文件夹 + 条目 合并的目录树 */}
       <aside {...testId("vault-nav")} className="flex flex-col border-r border-[var(--color-border)] bg-[var(--color-surface-2)]">
         <div {...testId("vault-nav-header")} className="flex h-14 items-center justify-between gap-2 border-b border-[var(--color-border)] px-4">
@@ -1218,6 +1323,11 @@ export function VaultPanel({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
+                <DropdownMenuItem onSelect={() => pickFile()}>
+                  <Upload className="h-4 w-4" />
+                  {t("upload_file")}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onSelect={() => {
                     // 文件夹只在目录模式可见,新建时顺带切过去
@@ -1453,27 +1563,55 @@ export function VaultPanel({
                   <Folder className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate">{folderPathOf(selected?.folderId ?? null)}</span>
                 </div>
-                <Button size="sm" variant="secondary" onClick={editEntry} disabled={busy}>
-                  <Pencil className="h-3.5 w-3.5" />
-                  {t("btn_edit")}
-                </Button>
+                {/* 文件条目正文不可文本编辑,隐藏「编辑」按钮 */}
+                {selected?.kind === "file" ? null : (
+                  <Button size="sm" variant="secondary" onClick={editEntry} disabled={busy}>
+                    <Pencil className="h-3.5 w-3.5" />
+                    {t("btn_edit")}
+                  </Button>
+                )}
               </div>
               <div {...testId("vault-item-preview-body")} className="mx-auto w-full max-w-[640px] px-6 py-8">
                 <div {...testId("vault-item-header")} className="mb-6 flex items-center gap-4">
-                  {itemIcon(previewName)}
+                  {selected?.kind === "file" ? fileIconBox() : itemIcon(previewName)}
                   <h2 className="min-w-0 flex-1 truncate text-2xl font-bold tracking-tight">
                     {previewName}
                   </h2>
                 </div>
-                <div {...testId("vault-item-content-card")} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-accent)] px-4 py-3">
-                  <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
-                    {content ? (
-                      content
-                    ) : (
-                      <span className="text-[var(--color-muted-foreground)]">{t("content_empty")}</span>
-                    )}
+                {selected?.kind === "file" ? (
+                  // ---- 文件条目:文件名 + 大小 + 下载(无文本正文) ----
+                  <div
+                    {...testId("vault-item-file-card")}
+                    className="flex items-center gap-4 rounded-2xl border border-[var(--color-border)] bg-[var(--color-accent)] px-4 py-4"
+                  >
+                    <FileIcon className="h-8 w-8 shrink-0 text-[var(--color-primary)]" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium">{selected.filename || previewName}</div>
+                      <div className="text-xs text-[var(--color-muted-foreground)]">
+                        {t("file_size_label", humanSize(selected.fileSize ?? 0))}
+                      </div>
+                    </div>
+                    <Button
+                      {...testId("vault-item-file-download")}
+                      size="sm"
+                      onClick={() => downloadFile(selected)}
+                      disabled={busy}
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      {t("file_download")}
+                    </Button>
                   </div>
-                </div>
+                ) : (
+                  <div {...testId("vault-item-content-card")} className="rounded-2xl border border-[var(--color-border)] bg-[var(--color-accent)] px-4 py-3">
+                    <div className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+                      {content ? (
+                        content
+                      ) : (
+                        <span className="text-[var(--color-muted-foreground)]">{t("content_empty")}</span>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {selected ? (
                   <div className="mt-6 flex items-center justify-between gap-3 px-1 text-xs text-[var(--color-muted-foreground)]">
                     <span className="flex min-w-0 items-center gap-1.5">

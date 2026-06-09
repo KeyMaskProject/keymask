@@ -321,4 +321,23 @@ export class GoogleDriveClient {
     if (!res.ok) throw new Error(`google drive download ${res.status}: ${await res.text()}`);
     return new Uint8Array(await res.arrayBuffer());
   }
+
+  /** 删除相对路径对应的文件。不存在(404 / 解析不到)幂等返回。 */
+  async remove(relPath: string): Promise<void> {
+    const clean = relPath.replace(/^\/+/, "").trim();
+    let fileId = this.fileCache.get(clean);
+    if (!fileId) {
+      const found = await this.locate(clean);
+      if (!found) return; // 已不存在 → 幂等
+      fileId = found.id;
+    }
+    const res = await fetch(`${DRIVE_FILES}/${fileId}`, {
+      method: "DELETE",
+      headers: this.authHeader,
+    });
+    this.fileCache.delete(clean);
+    if (!res.ok && res.status !== 404) {
+      throw new Error(`google drive delete ${res.status}: ${await res.text()}`);
+    }
+  }
 }

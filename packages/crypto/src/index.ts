@@ -106,6 +106,36 @@ export async function decryptFromEnvelope(
   return new TextDecoder().decode(pt);
 }
 
+// ---------- 二进制信封(文件密文专用,无 base64/JSON,省 33% 体积) ----------
+// 帧格式:magic(4B "KSF1") + ver(1B=1) + iv(12B) + ct(剩余全部)。
+// 文本条目继续用上面的 JSON 信封(兼容历史数据);大文件走这套裸字节帧。
+const BLOB_MAGIC = new Uint8Array([0x4b, 0x53, 0x46, 0x31]); // "KSF1"
+const BLOB_VER = 1;
+const BLOB_HEADER_LEN = 4 + 1 + 12; // = 17
+
+/** 原始字节 → 加密 → 二进制信封字节(存上网盘的文件 artifact 格式)。 */
+export async function encryptBytesToBlob(key: CryptoKey, data: Uint8Array): Promise<Uint8Array> {
+  const { iv, ct } = await encrypt(key, data);
+  const out = new Uint8Array(BLOB_HEADER_LEN + ct.byteLength);
+  out.set(BLOB_MAGIC, 0);
+  out[4] = BLOB_VER;
+  out.set(iv, 5);
+  out.set(ct, BLOB_HEADER_LEN);
+  return out;
+}
+
+/** 二进制信封字节 → 解密 → 原始字节。 */
+export async function decryptBytesFromBlob(key: CryptoKey, blob: Uint8Array): Promise<Uint8Array> {
+  if (blob.byteLength < BLOB_HEADER_LEN) throw new Error("blob too short");
+  for (let i = 0; i < BLOB_MAGIC.length; i++) {
+    if (blob[i] !== BLOB_MAGIC[i]) throw new Error("bad blob magic");
+  }
+  if (blob[4] !== BLOB_VER) throw new Error(`unsupported blob version ${blob[4]}`);
+  const iv = blob.subarray(5, BLOB_HEADER_LEN);
+  const ct = blob.subarray(BLOB_HEADER_LEN);
+  return decrypt(key, iv, ct);
+}
+
 /** 口令校验块:加密已知标记。解锁时解密比对,判断助记词是否正确。 */
 export async function makeVerifier(key: CryptoKey): Promise<Uint8Array> {
   return encryptToEnvelope(key, VERIFIER_MARKER);

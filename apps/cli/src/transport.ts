@@ -51,5 +51,12 @@ export function httpTransport(baseUrl: string, token: string | null): StorageTra
       const data = (await jsonOrThrow(res, "download")) as { contentB64: string };
       return b64decode(data.contentB64);
     },
+    async delete(path) {
+      const res = await fetch(`${baseUrl}/api/files?path=${encodeURIComponent(path)}`, {
+        method: "DELETE",
+        headers,
+      });
+      await jsonOrThrow(res, "delete");
+    },
   };
 }

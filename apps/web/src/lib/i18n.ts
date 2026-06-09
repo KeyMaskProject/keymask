@@ -197,6 +197,20 @@ const zh = {
   st_sync_ok: "已全部同步到网盘",
   st_sync_fail: (e: string) => `同步失败: ${e}`,
   st_load_fail: (e: string) => `加载列表失败: ${e}`,
+
+  // 文件加密上传
+  upload_file: "上传文件",
+  file_max_hint: "单文件上限 100MB",
+  file_too_large: (max: string) => `文件超过 ${max} 上限,未上传`,
+  file_section: "文件",
+  file_download: "下载",
+  file_size_label: (size: string) => `大小:${size}`,
+  st_uploading: (name: string) => `加密上传 ${name} …`,
+  st_uploaded: "文件已加密并同步到网盘",
+  st_uploaded_local: (e: string) => `文件已存本地,网盘同步失败:${e}`,
+  st_upload_fail: (e: string) => `上传失败: ${e}`,
+  st_downloading: "下载解密中 …",
+  st_download_fail: (e: string) => `下载失败: ${e}`,
 } satisfies Record<string, Msg>;
 
 const en: typeof zh = {
@@ -378,6 +392,20 @@ const en: typeof zh = {
   st_sync_ok: "All synced to netdisk",
   st_sync_fail: (e: string) => `Sync failed: ${e}`,
   st_load_fail: (e: string) => `Failed to load list: ${e}`,
+
+  // Encrypted file upload
+  upload_file: "Upload file",
+  file_max_hint: "Max 100MB per file",
+  file_too_large: (max: string) => `File exceeds the ${max} limit, not uploaded`,
+  file_section: "File",
+  file_download: "Download",
+  file_size_label: (size: string) => `Size: ${size}`,
+  st_uploading: (name: string) => `Encrypting & uploading ${name} …`,
+  st_uploaded: "File encrypted and synced to cloud",
+  st_uploaded_local: (e: string) => `File saved locally, cloud sync failed: ${e}`,
+  st_upload_fail: (e: string) => `Upload failed: ${e}`,
+  st_downloading: "Downloading & decrypting …",
+  st_download_fail: (e: string) => `Download failed: ${e}`,
 };
 
 export type MsgKey = keyof typeof zh;

@@ -20,13 +20,19 @@ export interface FolderMeta {
   parentId: string | null;
   createdAt: number;
 }
+/** 条目类型:文本(content 即正文)或文件(正文存独立 <id>.bin)。缺省视为 text(兼容旧数据)。 */
+export type EntryKind = "text" | "file";
 export interface EntryMeta {
   id: string;
   title: string;
   folderId: string | null; // null = 根目录
   createdAt: number;
   updatedAt: number;
-  size: number;
+  size: number; // 条目元信息信封字节数(检索用,非文件原始大小)
+  kind?: EntryKind; // 缺省 = "text"
+  filename?: string; // 文件条目:原始文件名
+  mimeType?: string; // 文件条目:MIME 类型
+  fileSize?: number; // 文件条目:原始明文字节数(展示用)
 }
 export interface IndexDoc {
   v: number;
@@ -36,10 +42,14 @@ export interface IndexDoc {
 export interface EntryDoc {
   id: string;
   title: string;
-  content: string;
+  content: string; // 文件条目此处为空串(正文在 <id>.bin)
   folderId: string | null;
   createdAt: number;
   updatedAt: number;
+  kind?: EntryKind; // 缺省 = "text"
+  filename?: string; // 文件条目:原始文件名
+  mimeType?: string; // 文件条目:MIME 类型
+  fileSize?: number; // 文件条目:原始明文字节数
 }
 
 /** 保险库注册表条目(明文元数据 + 密文校验块)。 */
@@ -63,6 +73,10 @@ export function joinPath(base: string, name: string): string {
 /** 某条目在存储后端里的相对路径(dir 为保险库数据目录,""=根)。用于展示网盘位置。 */
 export function itemRelPath(dir: string, id: string): string {
   return joinPath(joinPath(dir, ITEMS_DIR), `${id}.json`);
+}
+/** 文件条目正文 artifact(密文二进制信封)的相对路径:<dir>/items/<id>.bin。 */
+export function itemBlobRelPath(dir: string, id: string): string {
+  return joinPath(joinPath(dir, ITEMS_DIR), `${id}.bin`);
 }
 /** 新建保险库的数据目录:vaults/<id>。 */
 export function vaultDir(id: string): string {
@@ -91,6 +105,8 @@ export interface StorageTransport {
   upload(path: string, bytes: Uint8Array): Promise<void>;
   /** 按文件 id 下载原始字节。 */
   download(fileId: string): Promise<Uint8Array>;
+  /** 删除相对路径的文件;不存在应幂等不报错。 */
+  delete(path: string): Promise<void>;
 }
 
 // ---------- 抽象:本地密文缓存 ----------

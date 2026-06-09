@@ -36,3 +36,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "upload_failed", message: String(err) }, { status: 502 });
   }
 }
+
+// 删除文件(?path= 相对路径)。后端实现保证幂等(不存在不报错)。内容无关。
+export async function DELETE(request: Request) {
+  const conn = await getStorageForRequest(request);
+  if (!conn) return NextResponse.json({ error: "not_connected" }, { status: 401 });
+
+  const path = (new URL(request.url).searchParams.get("path") ?? "").trim();
+  if (!path) return NextResponse.json({ error: "path_required" }, { status: 400 });
+
+  try {
+    await conn.client.delete(path);
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    console.error("delete failed", err);
+    return NextResponse.json({ error: "delete_failed", message: String(err) }, { status: 502 });
+  }
+}
