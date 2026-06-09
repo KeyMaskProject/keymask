@@ -216,7 +216,6 @@ export function VaultPanel({
   // 详情区两种模式:打开已有条目为只读 preview;新建/点击编辑进入 edit。
   const [mode, setMode] = useState<"preview" | "edit">("preview");
   const [showHistory, setShowHistory] = useState(false); // 历史版本面板(冷路径,点开才拉)
-  const [historyCount, setHistoryCount] = useState<number | null>(null); // 当前选中条目的版本总数(含当前版;预览态懒拉,仅 list 目录)。按钮上仅在 >1 时显示历史数(= 总数-1,不含当前版)
   const [deleteTarget, setDeleteTarget] = useState<EntryMeta | null>(null); // 待确认删除的条目(打开 AlertDialog)
   // 编辑态的所属文件夹
   const [editFolderId, setEditFolderId] = useState<string | null>(null);
@@ -320,29 +319,6 @@ export function VaultPanel({
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phase, selectedVault]);
-
-  // 预览态懒拉当前选中条目的历史版本数,展示在「历史」按钮上。冷路径:仅 list 目录,不拉版本内容。
-  // 依赖 entries:保存/还原/删除后该数组换引用,自动重新计数。
-  useEffect(() => {
-    const v = vaultRef.current;
-    const meta = selectedId && selectedId !== draftId ? entries.find((e) => e.id === selectedId) : null;
-    if (!v || !meta) {
-      setHistoryCount(null);
-      return;
-    }
-    let alive = true;
-    setHistoryCount(null);
-    v.listVersions(meta.id)
-      .then((vs) => {
-        if (alive) setHistoryCount(vs.length);
-      })
-      .catch(() => {
-        if (alive) setHistoryCount(null);
-      });
-    return () => {
-      alive = false;
-    };
-  }, [selectedId, draftId, entries]);
 
   async function enterVault(key: CryptoKey, descriptor: VaultDescriptor) {
     const v = openBrowserVault(key, { id: descriptor.id, dir: descriptor.dir });
@@ -1664,12 +1640,12 @@ export function VaultPanel({
                     >
                       <History className="h-3.5 w-3.5" />
                       {t("history_open")}
-                      {historyCount != null && historyCount > 1 ? (
+                      {selected && (selected.versions ?? 1) > 1 ? (
                         <span
                           {...testId("vault-item-history-count")}
                           className="ml-0.5 rounded-full bg-black/10 px-1.5 text-[10px] font-medium tabular-nums dark:bg-white/15"
                         >
-                          {historyCount - 1}
+                          {(selected.versions ?? 1) - 1}
                         </span>
                       ) : null}
                     </Button>

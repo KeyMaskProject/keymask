@@ -63,6 +63,7 @@ function normalizeIndex(raw: unknown): IndexDoc {
         ...(e.mimeType !== undefined ? { mimeType: e.mimeType } : {}),
         ...(e.fileSize !== undefined ? { fileSize: e.fileSize } : {}),
         ...(e.contentHash !== undefined ? { contentHash: e.contentHash } : {}),
+        ...(e.versions !== undefined ? { versions: e.versions } : {}),
       }))
     : [];
   return { v: 2, entries, folders };
@@ -215,8 +216,10 @@ export class Vault {
 
     const doc: EntryDoc = { id, title: input.title, content: input.content, folderId, createdAt, updatedAt: now, contentHash };
 
+    // 写一份新快照 → 版本数 +1(旧数据无 versions 时按已有 1 版计)。
+    const versions = (existing ? (existing.versions ?? 1) : 0) + 1;
     const entryEnvelope = await encJson(this.key, doc);
-    const meta: EntryMeta = { id, title: input.title, folderId, createdAt, updatedAt: now, size: entryEnvelope.byteLength, contentHash };
+    const meta: EntryMeta = { id, title: input.title, folderId, createdAt, updatedAt: now, size: entryEnvelope.byteLength, contentHash, versions };
     if (existing) Object.assign(existing, meta);
     else this.index.entries.push(meta);
     const indexEnvelope = await encJson(this.key, this.index);
@@ -293,6 +296,8 @@ export class Vault {
       contentHash,
     };
 
+    // 写一份新快照 → 版本数 +1(旧数据无 versions 时按已有 1 版计)。
+    const versions = (existing ? (existing.versions ?? 1) : 0) + 1;
     const blob = await encryptBytesToBlob(this.key, input.bytes);
     const entryEnvelope = await encJson(this.key, doc);
     const meta: EntryMeta = {
@@ -307,6 +312,7 @@ export class Vault {
       mimeType: input.mimeType,
       fileSize,
       contentHash,
+      versions,
     };
     if (existing) Object.assign(existing, meta);
     else this.index.entries.push(meta);

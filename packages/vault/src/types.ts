@@ -34,6 +34,7 @@ export interface EntryMeta {
   mimeType?: string; // 文件条目:MIME 类型
   fileSize?: number; // 文件条目:原始明文字节数(展示用)
   contentHash?: string; // 当前版明文内容 SHA-256(hex),保存时据此去重;只在加密 index 内
+  versions?: number; // 版本快照总数(含当前版);写新快照时 +1,去重/仅改元数据不变。缺省(旧数据)按 1 处理
 }
 /** 历史版本的轻量元信息(由 items/<id>/ 目录列表派生,冷路径用)。 */
 export interface VersionMeta {
