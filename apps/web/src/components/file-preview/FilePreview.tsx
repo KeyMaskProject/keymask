@@ -10,6 +10,9 @@ import { previewSpecOf } from "@/lib/file-preview";
 import { CodePreview } from "./CodePreview";
 
 const PdfPreview = lazy(() => import("./PdfPreview").then((m) => ({ default: m.PdfPreview })));
+const MarkdownPreview = lazy(() =>
+  import("./MarkdownPreview").then((m) => ({ default: m.MarkdownPreview })),
+);
 
 export function FilePreview({
   entryId,
@@ -62,7 +65,7 @@ export function FilePreview({
       {...testId("vault-item-file-preview")}
       className="overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-accent)]"
     >
-      {spec.kind === "pdf" ? (
+      {spec.kind === "pdf" || spec.kind === "markdown" ? (
         <Suspense
           fallback={
             <div className="px-4 py-3 text-xs text-[var(--color-muted-foreground)]">
@@ -70,7 +73,7 @@ export function FilePreview({
             </div>
           }
         >
-          <PdfPreview bytes={bytes} />
+          {spec.kind === "pdf" ? <PdfPreview bytes={bytes} /> : <MarkdownPreview bytes={bytes} />}
         </Suspense>
       ) : (
         <CodePreview bytes={bytes} lang={spec.lang ?? null} />

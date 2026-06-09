@@ -42,6 +42,52 @@
 .hljs-meta { color: var(--hl-section); }
 
 /*
+ * Markdown 渲染(MarkdownPreview)的排版。色彩走主题变量,自动跟随浅/深色。
+ */
+.md-preview > :first-child { margin-top: 0; }
+.md-preview > :last-child { margin-bottom: 0; }
+.md-preview h1,
+.md-preview h2,
+.md-preview h3,
+.md-preview h4 { margin: 1.4em 0 0.6em; font-weight: 600; line-height: 1.25; }
+.md-preview h1 { font-size: 1.5em; }
+.md-preview h2 { font-size: 1.3em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+.md-preview h3 { font-size: 1.12em; }
+.md-preview p,
+.md-preview ul,
+.md-preview ol,
+.md-preview blockquote,
+.md-preview table { margin: 0.7em 0; }
+.md-preview ul { list-style: disc; padding-left: 1.5em; }
+.md-preview ol { list-style: decimal; padding-left: 1.5em; }
+.md-preview li { margin: 0.25em 0; }
+.md-preview a { color: var(--color-primary); text-decoration: underline; }
+.md-preview code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9em;
+  background: var(--color-muted);
+  padding: 0.1em 0.35em;
+  border-radius: 0.3em;
+}
+.md-preview pre {
+  background: var(--color-muted);
+  padding: 0.8em 1em;
+  border-radius: 0.5em;
+  overflow-x: auto;
+}
+.md-preview pre code { background: none; padding: 0; }
+.md-preview blockquote {
+  border-left: 3px solid var(--color-border);
+  padding-left: 1em;
+  color: var(--color-muted-foreground);
+}
+.md-preview hr { border: 0; border-top: 1px solid var(--color-border); margin: 1.4em 0; }
+.md-preview table { border-collapse: collapse; width: 100%; }
+.md-preview th,
+.md-preview td { border: 1px solid var(--color-border); padding: 0.4em 0.6em; text-align: left; }
+.md-preview img { max-width: 100%; height: auto; }
+
+/*
  * 保存中:让编辑头(vault-item-edit-header)的 45° 斜纹背景沿条纹轴向滑动。
  * 条纹周期 20px;沿 x 轴平移 28.284px(=20px ÷ cos45°)恰好等于一个周期在轴
  * 方向上的投影 → 无缝循环。reduced-motion 下静止。
