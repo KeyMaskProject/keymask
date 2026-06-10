@@ -117,6 +117,7 @@ const zh = {
   bk_offline_note: "本文件完全离线工作,不会发出任何网络请求。解密只在你的浏览器内进行。",
   bk_exported_at: (d: string) => `导出时间:${d}`,
   bk_hover_hint: "单词默认遮挡,鼠标悬停(或触摸)逐个查看,谨防旁人窥屏。",
+  bk_relock: "重新锁定",
 
   // 选择保险库
   select_title: "选择保险库",
@@ -415,6 +416,7 @@ const en: typeof zh = {
   bk_offline_note: "This file works fully offline and makes no network requests. Decryption happens only in your browser.",
   bk_exported_at: (d: string) => `Exported: ${d}`,
   bk_hover_hint: "Words are masked by default — hover (or tap) to reveal one at a time, beware of shoulder surfing.",
+  bk_relock: "Lock again",
 
   select_title: "Choose a vault",
   select_desc: "You have multiple vaults. Pick one and enter its recovery phrase.",

@@ -46,6 +46,7 @@ const STRING_KEYS = [
   "bk_wrong",
   "bk_offline_note",
   "bk_hover_hint",
+  "bk_relock",
   "pdf_risk_1",
 ] as const satisfies readonly MsgKey[];
 
