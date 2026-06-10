@@ -8,7 +8,7 @@ export function httpTransport(baseUrl: string, token: string | null): StorageTra
   async function jsonOrThrow(res: Response, what: string): Promise<unknown> {
     if (res.status === 401) {
       throw new Error(
-        `本地接口拒绝(401)。桌面是否已运行并完成 Google 登录?token 是否有效?(${what})`,
+        `接口拒绝(401)。本地:桌面是否已运行并完成登录?云端:令牌可能已吊销,重新 \`keysark connect\`。(${what})`,
       );
     }
     if (!res.ok) {

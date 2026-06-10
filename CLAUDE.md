@@ -49,4 +49,4 @@ pnpm monorepo. Workspaces: `apps/*`, `packages/*`。
 - `pnpm install` / `pnpm -r typecheck` / `pnpm -r build`
 - `pnpm --filter @keysark/web dev` — 启动 Next.js (端口 6134)
 - `pnpm --filter @keysark/db db:push` — 应用 schema (dev)
-- `pnpm dev` — panes 编排 (web + drizzle studio)
+- `pnpm dev` — panes 编排 (web)

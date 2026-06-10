@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { readReturnTo, stashReturnTo, RETURN_TO_COOKIE } from "./return-to";
 import {
   GoogleDriveClient,
   buildAuthorizeUrl,
@@ -86,8 +87,8 @@ export async function getConnectedGoogleBySub(sub: string): Promise<ConnectedGoo
   };
 }
 
-/** 发起 Google 授权:state 防 CSRF → 重定向授权页。 */
-export async function handleGoogleLogin(): Promise<NextResponse> {
+/** 发起 Google 授权:state 防 CSRF → 重定向授权页。?next= 暂存,回调成功后跳回。 */
+export async function handleGoogleLogin(request?: Request): Promise<NextResponse> {
   const config = loadGoogleConfig();
   const state = newId();
   const res = NextResponse.redirect(
@@ -99,6 +100,7 @@ export async function handleGoogleLogin(): Promise<NextResponse> {
     path: "/",
     maxAge: 600,
   });
+  if (request) stashReturnTo(request, res);
   return res;
 }
 
@@ -135,7 +137,7 @@ export async function handleGoogleCallback(request: Request): Promise<NextRespon
       expiresAt: new Date(Date.now() + token.expiresIn * 1000),
       scope: token.scope,
     });
-    const res = NextResponse.redirect(home);
+    const res = NextResponse.redirect(new URL(await readReturnTo(), request.url));
     res.cookies.set(GOOGLE_UID_COOKIE, sub, {
       httpOnly: true,
       sameSite: "lax",
@@ -143,6 +145,7 @@ export async function handleGoogleCallback(request: Request): Promise<NextRespon
       maxAge: 60 * 60 * 24 * 30,
     });
     res.cookies.delete(STATE_COOKIE);
+    res.cookies.delete(RETURN_TO_COOKIE);
     return res;
   } catch (err) {
     console.error("google callback failed", err);

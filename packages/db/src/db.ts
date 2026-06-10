@@ -2,8 +2,7 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import postgres from "postgres";
 import * as schema from "./schema";
 
-// Postgres 连接惰性创建:只有真正用到 postgres token 后端时才连。
-// 桌面/CLI 走 JSON 文件后端(KEYSARK_TOKEN_STORE=json),不应在 import 时强求 DATABASE_URL。
+// Postgres 连接惰性创建:不在 import 时强求 DATABASE_URL(typecheck/构建环境无 DB)。
 let _db: ReturnType<typeof drizzle<typeof schema>> | null = null;
 
 export function getDb() {

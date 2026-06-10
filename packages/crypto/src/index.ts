@@ -194,6 +194,13 @@ export async function deriveWrappingKey(
   ]);
 }
 
+export {
+  scorePassword,
+  MIN_PASSWORD_LENGTH,
+  type PasswordScore,
+  type StrengthReason,
+} from "./password-strength";
+
 /** 口令校验块:加密已知标记。解锁时解密比对,判断助记词是否正确。 */
 export async function makeVerifier(key: CryptoKey): Promise<Uint8Array> {
   return encryptToEnvelope(key, VERIFIER_MARKER);

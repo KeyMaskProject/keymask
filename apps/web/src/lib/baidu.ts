@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
+import { readReturnTo, stashReturnTo, RETURN_TO_COOKIE } from "./return-to";
 import {
   BaiduPanClient,
   buildAuthorizeUrl,
@@ -25,11 +26,15 @@ export interface ConnectedBaidu {
   uk: string;
 }
 
-/** 取已连接的百度客户端,必要时刷新 token 并写回 DB。未连接返回 null。 */
+/** 取已连接的百度客户端(cookie 路径)。未连接返回 null。 */
 export async function getConnectedBaidu(): Promise<ConnectedBaidu | null> {
   const uk = (await cookies()).get(UK_COOKIE)?.value;
   if (!uk) return null;
+  return getConnectedBaiduByUk(uk);
+}
 
+/** 按百度 uk 取已连接客户端(无 cookie 路径:CLI token 鉴权用)。必要时刷新 token 写回。 */
+export async function getConnectedBaiduByUk(uk: string): Promise<ConnectedBaidu | null> {
   const account = await getStorageAccount(PROVIDER, uk);
   if (!account) return null;
 
@@ -49,8 +54,8 @@ export async function getConnectedBaidu(): Promise<ConnectedBaidu | null> {
   return { client: new BaiduPanClient(accessToken, config), uk };
 }
 
-/** 发起百度授权: state 防 CSRF → 重定向授权页。 */
-export async function handleLogin(): Promise<NextResponse> {
+/** 发起百度授权: state 防 CSRF → 重定向授权页。?next= 暂存,回调成功后跳回。 */
+export async function handleLogin(request?: Request): Promise<NextResponse> {
   const config = loadConfig();
   const state = newId();
   const res = NextResponse.redirect(buildAuthorizeUrl(config, { state }));
@@ -60,6 +65,7 @@ export async function handleLogin(): Promise<NextResponse> {
     path: "/",
     maxAge: 600,
   });
+  if (request) stashReturnTo(request, res);
   return res;
 }
 
@@ -88,7 +94,7 @@ export async function handleCallback(request: Request): Promise<NextResponse> {
       expiresAt: new Date(Date.now() + token.expiresIn * 1000),
       scope: token.scope,
     });
-    const res = NextResponse.redirect(home);
+    const res = NextResponse.redirect(new URL(await readReturnTo(), request.url));
     res.cookies.set(UK_COOKIE, uk, {
       httpOnly: true,
       sameSite: "lax",
@@ -96,6 +102,7 @@ export async function handleCallback(request: Request): Promise<NextResponse> {
       maxAge: 60 * 60 * 24 * 30,
     });
     res.cookies.delete(STATE_COOKIE);
+    res.cookies.delete(RETURN_TO_COOKIE);
     return res;
   } catch (err) {
     console.error("baidu callback failed", err);

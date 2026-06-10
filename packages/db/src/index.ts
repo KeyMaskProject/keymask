@@ -8,3 +8,16 @@ export {
   type StorageAccount,
   type StorageTokenInput,
 } from "./storage-accounts";
+export {
+  createCliAuthRequest,
+  getCliAuthRequestByUserCode,
+  getCliAuthRequestByDeviceHash,
+  approveCliAuthRequest,
+  denyCliAuthRequest,
+  consumeCliAuthRequest,
+  createCliToken,
+  getCliTokenByHash,
+  revokeCliTokenByHash,
+  type CliAuthRequestRecord,
+  type CliTokenRecord,
+} from "./cli-auth";

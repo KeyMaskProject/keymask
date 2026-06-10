@@ -34,7 +34,9 @@ import {
   deriveKey,
   generateMnemonic,
   makeVerifier,
+  scorePassword,
   validateMnemonic,
+  type StrengthReason,
 } from "@keysark/crypto";
 import { newId } from "@keysark/db/id";
 import {
@@ -72,7 +74,6 @@ import {
   setPassword,
   unlock as unlockCredential,
 } from "@/lib/vault-lock";
-import { scorePassword, type StrengthReason } from "@/lib/password-strength";
 import {
   IDLE_OPTIONS,
   loadIdleMinutes,

@@ -144,6 +144,19 @@ const zh = {
   pw_reason_classes: "需含小写/大写/数字/符号中至少 3 类",
   pw_reason_pattern: "过于规律(重复/连续/常见密码),请换一个",
 
+  // CLI 设备码授权页
+  cli_auth_title: "CLI 授权",
+  cli_auth_desc:
+    "一个命令行正在请求访问你的保管库(仅密文搬运权限,等同一份浏览器登录态;你的助记词与明文仍只在本地)。",
+  cli_auth_verify_hint: "请核对下方代码与终端里显示的一致,再确认授权:",
+  cli_auth_approve: "授权",
+  cli_auth_deny: "拒绝",
+  cli_auth_login_hint: "请先登录,登录后会自动回到本页继续授权。",
+  cli_auth_invalid: "链接无效或已过期。请回到终端重新执行 keysark connect。",
+  cli_auth_approved: "已授权 ✓ 回到终端继续,本页可以关闭。",
+  cli_auth_denied: "已拒绝该请求。本页可以关闭。",
+  cli_auth_error: "操作失败,请重试。",
+
   // 修改密码 / 闲置自动锁定
   pw_change_title: "修改密码",
   pw_change_desc: "输入当前密码与新密码。改完后旧密码立即失效,助记词不变。",
@@ -407,6 +420,19 @@ const en: typeof zh = {
   pw_reason_short: "At least 12 characters",
   pw_reason_classes: "Use 3+ of: lowercase / uppercase / digits / symbols",
   pw_reason_pattern: "Too predictable (repeats / sequences / common passwords) — pick another",
+
+  // CLI device authorization page
+  cli_auth_title: "Authorize CLI",
+  cli_auth_desc:
+    "A command line is requesting access to your vault (ciphertext transport only, equivalent to a browser session; your phrase and plaintext stay local).",
+  cli_auth_verify_hint: "Confirm the code below matches what your terminal shows, then approve:",
+  cli_auth_approve: "Approve",
+  cli_auth_deny: "Deny",
+  cli_auth_login_hint: "Sign in first — you'll return to this page to continue.",
+  cli_auth_invalid: "This link is invalid or expired. Re-run keysark connect in your terminal.",
+  cli_auth_approved: "Approved ✓ Return to your terminal — you can close this page.",
+  cli_auth_denied: "Request denied. You can close this page.",
+  cli_auth_error: "Something went wrong, please retry.",
 
   // Change password / idle auto-lock
   pw_change_title: "Change password",

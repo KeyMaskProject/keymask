@@ -1,10 +1,21 @@
-// keysark —— 命令行管理 items。自带 E2E:本地派生主密钥、本地加解密,
-// 只把 envelope 密文经 localhost:35291 中转。明文/助记词/主密钥绝不出 CLI 进程。
-import { deriveKey, validateMnemonic } from "@keysark/crypto";
+// keysark —— 完全独立的命令行客户端:设备码授权登录云端 web 接口,
+// 本地派生主密钥、本地加解密,只把 envelope 密文经云端中转。
+// 明文/助记词/主密钥/解锁密码绝不出 CLI 进程。
+import { spawn } from "node:child_process";
+import { checkVerifier, deriveKey, validateMnemonic } from "@keysark/crypto";
+import { b64decode } from "@keysark/vault";
 import type { EntryMeta, StorageTransport, Vault, VaultDescriptor } from "@keysark/vault";
-import { resolveConn } from "./config";
+import { clearCloud, loadCloud, resolveConn, saveCloud } from "./config";
 import { httpTransport } from "./transport";
-import { acquireMnemonic, clearSession, saveSession } from "./session";
+import {
+  acquireMnemonic,
+  clearCredential,
+  hasCredential,
+  promptNewPassword,
+  promptVisible,
+  saveCredential,
+  writeUnlockCache,
+} from "./credential";
 import { fetchVaults, openVault, pickVault } from "./vault-select";
 
 interface Args {
@@ -53,15 +64,28 @@ async function readStdin(): Promise<string> {
 }
 
 function transportFrom(args: Args): StorageTransport {
-  const portOverride = flagStr(args.flags, "port");
-  const conn = resolveConn(portOverride ? Number(portOverride) : undefined);
-  if (!conn.desktopRunning && !flagStr(args.flags, "port")) {
-    console.error(
-      `⚠ 未找到 ~/.keysark/local.json,默认连 ${conn.baseUrl}。桌面应用可能未运行。`,
-    );
-  }
+  const conn = resolveConn(flagStr(args.flags, "server"));
+  if (!conn) fail("未登录。先运行 `keysark login --server <url>` 完成登录。");
+  if (!conn.token) fail(`尚未在 ${conn.baseUrl} 登录。先运行 \`keysark login\`。`);
   return httpTransport(conn.baseUrl, conn.token);
 }
+
+/** best-effort 打开系统浏览器;失败不报错(用户可手动复制链接)。 */
+function tryOpenBrowser(url: string): void {
+  const [cmd, cmdArgs] =
+    process.platform === "darwin"
+      ? ["open", [url]]
+      : process.platform === "win32"
+        ? ["cmd", ["/c", "start", "", url]]
+        : ["xdg-open", [url]];
+  try {
+    spawn(cmd as string, cmdArgs as string[], { stdio: "ignore", detached: true }).unref();
+  } catch {
+    /* 无图形环境等,忽略 */
+  }
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /** 取 (key, vault, transport):env/会话助记词 → 派生 → 匹配保险库。 */
 async function ready(
@@ -70,7 +94,13 @@ async function ready(
 ): Promise<{ key: CryptoKey; descriptor: VaultDescriptor; vault: Vault; transport: StorageTransport }> {
   const transport = transportFrom(args);
   const mnemonic = await acquireMnemonic(allowPrompt);
-  if (!mnemonic) fail("没有可用助记词。设 KEYSARK_MNEMONIC 或先 `keysark login`。");
+  if (!mnemonic) {
+    fail(
+      hasCredential()
+        ? "未解锁(密码未通过或非交互环境)。也可设 KEYSARK_MNEMONIC。"
+        : "本机没有助记词。先运行 `keysark import` 导入,或设 KEYSARK_MNEMONIC。",
+    );
+  }
   if (!validateMnemonic(mnemonic!)) fail("助记词无效(检查 12 词与拼写)。");
   const key = await deriveKey(mnemonic!);
   const vaults = await fetchVaults(transport);
@@ -96,11 +126,18 @@ function findEntry(vault: Vault, idArg: string): EntryMeta {
   return matches[0]!;
 }
 
-const HELP = `keysark —— E2E 网盘文本保管库 CLI
+const HELP = `keysark —— E2E 网盘文本保管库 CLI(独立程序,直连云端)
 
-用法:
-  keysark login              校验助记词并在本机记住(本机加密)
-  keysark logout             忘记本机记住的助记词
+账号:
+  keysark login [--server <url>]   设备码授权登录(浏览器完成,可跨机器)
+  keysark logout                   登出:吊销令牌、清本机登录态(已导入的助记词凭据保留)
+  keysark status                   显示登录与助记词导入状态
+
+助记词(只能导入,不能创建;创建请去网页端):
+  keysark import             导入 12 词助记词:在线校验匹配保险库 → 设置解锁密码(本机加密保存)
+  keysark forget             忘记本机助记词(删除加密凭据与解锁缓存)
+
+条目:
   keysark vaults             列出保险库及匹配情况
   keysark ls                 列出当前保险库的条目
   keysark get <id>           解密并打印某条目
@@ -109,12 +146,17 @@ const HELP = `keysark —— E2E 网盘文本保管库 CLI
   keysark rm <id>            删除条目(从索引摘除)
   keysark sync               重推本地待同步项
 
+解锁机制(与网页端一致):
+  导入时强制设置解锁密码(≥12 位 + ≥3 类字符);助记词经 Argon2id 派生密钥加密存本机。
+  输对密码后 15 分钟内免重输(有操作自动续期);过期需重新输入密码。
+
 全局选项:
-  --port <n>     覆盖本地接口端口(默认读 ~/.keysark/local.json,回退 35291)
+  --server <url>       覆盖云端接口地址
   --vault <id|label>   指定保险库
 环境变量:
-  KEYSARK_MNEMONIC   助记词(免交互/免 login)
-  KEYSARK_PORT       本地接口端口`;
+  KEYSARK_SERVER     云端接口(login 的默认 --server)
+  KEYSARK_MNEMONIC   助记词(跳过本机凭据,脚本/CI 用)
+  KEYSARK_NO_BROWSER login 时不自动打开浏览器`;
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -126,19 +168,130 @@ async function main() {
       console.log(HELP);
       return;
 
-    case "login": {
-      // 校验助记词能匹配到保险库后才记住。
-      const { descriptor } = await ready(args, true);
-      const mnemonic = (await acquireMnemonic(true))!;
-      saveSession(mnemonic);
-      console.log(`✓ 已记住。匹配保险库:${descriptor.label || "(默认)"} [${descriptor.id.slice(0, 8)}]`);
+    case "import": {
+      // 导入助记词:在线校验必须匹配已有保险库(CLI 不能创建)→ 强制设置解锁密码 → 本机加密保存。
+      const transport = transportFrom(args);
+      if (!process.stdin.isTTY) fail("import 需要交互终端。");
+
+      const raw = (await promptVisible("输入 12 词助记词(空格分隔):")).trim().replace(/\s+/g, " ");
+      if (!validateMnemonic(raw)) fail("助记词无效(检查 12 个词与拼写)。");
+
+      console.log("在线校验中 …");
+      const key = await deriveKey(raw);
+      const vaults = await fetchVaults(transport);
+      if (vaults.length === 0) fail("网盘里没有保险库。CLI 不能创建助记词,请先在网页端创建。");
+      const matches: VaultDescriptor[] = [];
+      for (const v of vaults) {
+        if (await checkVerifier(key, b64decode(v.verifier))) matches.push(v);
+      }
+      if (matches.length === 0) fail("助记词不匹配任何保险库(verifier 校验失败)。CLI 只能导入已有助记词。");
+
+      const pw = await promptNewPassword();
+      await saveCredential(raw, pw);
+      writeUnlockCache(raw); // 刚导入视同刚解锁:15 分钟内免密
+      const names = matches.map((v) => `${v.label || "(默认)"} [${v.id.slice(0, 8)}]`).join("、");
+      console.log(`✓ 已导入并加密保存。匹配保险库:${names}`);
+      console.log("  之后的命令会要求解锁密码;输对后 15 分钟内免重输。");
       return;
     }
 
-    case "logout":
-      clearSession();
-      console.log("✓ 已忘记本机助记词。");
+    case "forget":
+      clearCredential();
+      console.log("✓ 已忘记本机助记词(凭据与解锁缓存已删除)。");
       return;
+
+    case "status": {
+      const cloud = loadCloud();
+      console.log(cloud ? `登录:✓ ${cloud.server}(${cloud.provider ?? "?"})` : "登录:✗(keysark login)");
+      console.log(hasCredential() ? "助记词:✓ 已导入(密码加密)" : "助记词:✗(keysark import)");
+      return;
+    }
+
+    case "login": {
+      // 设备码授权:生成链接让用户去网页登录确认,本地轮询感知授权完成。
+      const server = (
+        flagStr(args.flags, "server") ??
+        process.env.KEYSARK_SERVER ??
+        loadCloud()?.server ??
+        ""
+      ).replace(/\/+$/, "");
+      if (!server) fail("用法:keysark login --server https://your-keysark.example(或设 KEYSARK_SERVER)");
+
+      const res = await fetch(`${server}/api/cli/device`, { method: "POST" }).catch((e) => {
+        fail(`无法连接 ${server}:${e instanceof Error ? e.message : e}`);
+      });
+      if (!res.ok) fail(`发起授权失败:HTTP ${res.status}`);
+      const d = (await res.json()) as {
+        device_code: string;
+        user_code: string;
+        verification_url: string;
+        interval?: number;
+        expires_in?: number;
+      };
+
+      console.log(`在浏览器中打开以下链接完成授权(可在任何设备打开):\n`);
+      console.log(`  ${d.verification_url}\n`);
+      console.log(`核对码:${d.user_code}(请确认网页显示的码与此一致)\n`);
+      if (!args.flags["no-browser"] && !process.env.KEYSARK_NO_BROWSER) {
+        tryOpenBrowser(d.verification_url);
+      }
+
+      const intervalMs = Math.max(2, d.interval ?? 3) * 1000;
+      const deadline = Date.now() + (d.expires_in ?? 600) * 1000;
+      process.stdout.write("等待网页授权 ");
+      while (Date.now() < deadline) {
+        await sleep(intervalMs);
+        let pd: { status?: string; token?: string; provider?: string } = {};
+        try {
+          const pr = await fetch(`${server}/api/cli/device/token`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ device_code: d.device_code }),
+          });
+          pd = (await pr.json()) as typeof pd;
+        } catch {
+          process.stdout.write("!"); // 网络抖动,继续轮询
+          continue;
+        }
+        if (pd.status === "pending") {
+          process.stdout.write(".");
+          continue;
+        }
+        console.log();
+        if (pd.status === "approved" && pd.token) {
+          saveCloud({ server, token: pd.token, provider: pd.provider });
+          console.log(`✓ 登录成功:${server}(${pd.provider ?? "?"})。`);
+          if (!hasCredential()) console.log("  下一步:keysark import 导入助记词。");
+          return;
+        }
+        if (pd.status === "denied") fail("授权被网页侧拒绝。");
+        fail("授权已过期或失效,请重新 keysark login。");
+      }
+      console.log();
+      fail("等待授权超时,请重新 keysark login。");
+      return;
+    }
+
+    case "logout": {
+      const cloud = loadCloud();
+      if (!cloud) {
+        console.log("(未登录)");
+        return;
+      }
+      try {
+        // best-effort 吊销服务端令牌;失败也照常清本地登录态。
+        await fetch(`${cloud.server}/api/cli/token`, {
+          method: "DELETE",
+          headers: { "x-keysark-token": cloud.token },
+        });
+      } catch {
+        /* 服务端不可达,本地仍登出 */
+      }
+      clearCloud();
+      console.log(`✓ 已登出 ${cloud.server}(令牌已吊销)。`);
+      if (hasCredential()) console.log("  本机助记词凭据保留;如需删除运行 keysark forget。");
+      return;
+    }
 
     case "vaults": {
       const transport = transportFrom(args);
@@ -150,8 +303,6 @@ async function main() {
         console.log("(无保险库)");
         return;
       }
-      const { checkVerifier } = await import("@keysark/crypto");
-      const { b64decode } = await import("@keysark/vault");
       for (const v of vaults) {
         const ok = await checkVerifier(key, b64decode(v.verifier));
         console.log(`${ok ? "●" : "○"} ${v.label || "(默认)"}  [${v.id.slice(0, 8)}]  dir=${v.dir || "/"}`);

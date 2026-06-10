@@ -1,42 +1,57 @@
-// 本地接口连接信息:默认从 ~/.keysark/local.json(桌面写出)读 { port, token };
-// KEYSARK_PORT / --port 覆盖端口。缺失则回退默认端口并提示桌面可能未运行。
-import { readFileSync } from "node:fs";
+// 云端连接信息:~/.keysark/cloud.json(`keysark login` 设备码授权写出 { server, token, provider })。
+// CLI 是完全独立的程序,直连云端 web 接口;--server / KEYSARK_SERVER 可覆盖服务器地址。
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-
-export const DEFAULT_LOCAL_PORT = 35291;
 
 export function keysarkDir(): string {
   return process.env.KEYSARK_HOME || join(homedir(), ".keysark");
 }
-export function localConfigPath(): string {
-  return join(keysarkDir(), "local.json");
+
+export function cloudConfigPath(): string {
+  return join(keysarkDir(), "cloud.json");
 }
 
-export interface LocalConn {
+export interface CloudConn {
+  server: string;
+  token: string;
+  provider?: string;
+}
+
+/** 读云端登录态(`keysark login` 写出);没有/损坏返回 null。 */
+export function loadCloud(): CloudConn | null {
+  try {
+    const cfg = JSON.parse(readFileSync(cloudConfigPath(), "utf8")) as Partial<CloudConn>;
+    if (typeof cfg.server === "string" && cfg.server && typeof cfg.token === "string" && cfg.token) {
+      return { server: cfg.server, token: cfg.token, provider: cfg.provider };
+    }
+  } catch {
+    /* 无 cloud.json */
+  }
+  return null;
+}
+
+export function saveCloud(c: CloudConn): void {
+  mkdirSync(keysarkDir(), { recursive: true });
+  writeFileSync(cloudConfigPath(), JSON.stringify(c), { mode: 0o600 });
+}
+
+export function clearCloud(): void {
+  rmSync(cloudConfigPath(), { force: true });
+}
+
+export interface Conn {
   baseUrl: string;
   token: string | null;
-  desktopRunning: boolean;
 }
 
-/** 解析本地接口连接。portOverride 来自 --port/KEYSARK_PORT。 */
-export function resolveConn(portOverride?: number): LocalConn {
-  let port = DEFAULT_LOCAL_PORT;
-  let token: string | null = null;
-  let desktopRunning = false;
-  try {
-    const cfg = JSON.parse(readFileSync(localConfigPath(), "utf8")) as {
-      port?: number;
-      token?: string;
-    };
-    if (Number.isInteger(cfg.port) && cfg.port! > 0) port = cfg.port!;
-    if (typeof cfg.token === "string") token = cfg.token;
-    desktopRunning = true; // 文件在 → 桌面至少启动过
-  } catch {
-    /* 无 local.json → 回退默认端口 */
+/** 解析云端连接。serverOverride 来自 --server / KEYSARK_SERVER;未登录返回 null token。 */
+export function resolveConn(serverOverride?: string): Conn | null {
+  const cloud = loadCloud();
+  const override = (serverOverride ?? process.env.KEYSARK_SERVER ?? "").replace(/\/+$/, "");
+  if (override) {
+    return { baseUrl: override, token: cloud && cloud.server === override ? cloud.token : null };
   }
-  const envPort = Number(process.env.KEYSARK_PORT);
-  if (Number.isInteger(envPort) && envPort > 0) port = envPort;
-  if (portOverride && portOverride > 0) port = portOverride;
-  return { baseUrl: `http://127.0.0.1:${port}`, token, desktopRunning };
+  if (cloud) return { baseUrl: cloud.server, token: cloud.token };
+  return null;
 }
