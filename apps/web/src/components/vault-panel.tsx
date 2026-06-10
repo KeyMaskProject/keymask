@@ -55,6 +55,7 @@ import {
   History,
   LayoutList,
   Loader2,
+  Lock,
   MoreHorizontal,
   Pencil,
   Plus,
@@ -82,6 +83,7 @@ import {
   startIdleLock,
 } from "@/lib/idle-lock";
 import { exportVaultBackupPdf } from "@/lib/vault-pdf";
+import { exportEncryptedBackupHtml } from "@/lib/vault-backup-html";
 import { testId } from "@/lib/test-id";
 import { FilePreview } from "./file-preview/FilePreview";
 import { VersionHistory } from "./version-history/VersionHistory";
@@ -224,7 +226,11 @@ export function VaultPanel({
   // 创建流程
   const [newLabel, setNewLabel] = useState("");
   const [newMnemonic, setNewMnemonic] = useState<string | null>(null);
-  const [downloaded, setDownloaded] = useState(false); // 已下载 PDF 备份(完整助记词只在 PDF 里)
+  const [downloaded, setDownloaded] = useState(false); // 已下载备份(PDF 或加密 HTML)
+  // 加密 HTML 备份弹窗(备份密码 + 二次确认)
+  const [showHtmlExport, setShowHtmlExport] = useState(false);
+  const [bkPw, setBkPw] = useState("");
+  const [bkPw2, setBkPw2] = useState("");
   const [exporting, setExporting] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const challengeIdx = useMemo(() => {
@@ -546,6 +552,32 @@ export function VaultPanel({
       setStatus(t("st_save_fail", String(err)));
     } finally {
       setExporting(false);
+    }
+  }
+
+  // 加密 HTML 备份:备份密码经 Argon2id 加密助记词,生成自解密单文件下载。
+  async function downloadEncryptedBackup() {
+    if (!newMnemonic) return;
+    if (!scorePassword(bkPw).ok || bkPw !== bkPw2) return;
+    setBusy(true);
+    try {
+      const label = vaults.length === 0 ? "default" : newLabel.trim() || "default";
+      await exportEncryptedBackupHtml({
+        mnemonic: newMnemonic,
+        vaultName: label,
+        url: window.location.origin,
+        locale,
+        password: bkPw,
+      });
+      setDownloaded(true);
+      setShowHtmlExport(false);
+      setBkPw("");
+      setBkPw2("");
+      setStatus(null);
+    } catch (err) {
+      setStatus(t("st_html_export_fail", String(err)));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -1067,15 +1099,50 @@ export function VaultPanel({
                 <p className="text-xs text-[var(--color-muted-foreground)]">
                   {t("reveal_hint_obscured")}
                 </p>
-                <Button
-                  onClick={downloadBackup}
-                  disabled={busy || exporting}
-                  size="lg"
-                  variant={downloaded ? "outline" : "default"}
-                >
-                  <Download className="h-4 w-4" />
-                  {exporting ? t("pdf_downloading") : t("pdf_download_btn")}
-                </Button>
+                {/* 分体按钮:主体下载 PDF(原行为不变),右侧下拉选择其他导出方式 */}
+                <div className="flex">
+                  <Button
+                    onClick={downloadBackup}
+                    disabled={busy || exporting}
+                    size="lg"
+                    variant={downloaded ? "outline" : "default"}
+                    className="flex-1 rounded-r-none"
+                  >
+                    <Download className="h-4 w-4" />
+                    {exporting ? t("pdf_downloading") : t("pdf_download_btn")}
+                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        {...testId("vault-backup-menu")}
+                        size="lg"
+                        variant={downloaded ? "outline" : "default"}
+                        disabled={busy || exporting}
+                        aria-label={t("backup_more_options")}
+                        className="rounded-l-none border-l border-[var(--color-border)] px-2.5"
+                      >
+                        <ChevronDown className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={downloadBackup}>
+                        <Download className="h-4 w-4" />
+                        {t("backup_pdf_option")}
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        {...testId("vault-backup-html-option")}
+                        onSelect={() => {
+                          setBkPw("");
+                          setBkPw2("");
+                          setShowHtmlExport(true);
+                        }}
+                      >
+                        <Lock className="h-4 w-4" />
+                        {t("backup_html_option")}
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
                 {downloaded ? (
                   <>
                     <p className="text-xs text-[var(--color-success)]">
@@ -1129,6 +1196,67 @@ export function VaultPanel({
               </div>
             ) : null}
             <StatusLine status={status} />
+            {/* 加密 HTML 备份:设备份密码(强度门槛 + 二次确认)→ 生成自解密单文件 */}
+            <AlertDialog
+              open={showHtmlExport}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setShowHtmlExport(false);
+                  setBkPw("");
+                  setBkPw2("");
+                }
+              }}
+            >
+              <AlertDialogContent {...testId("vault-backup-html-dialog")}>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>{t("backup_html_title")}</AlertDialogTitle>
+                  <AlertDialogDescription>{t("backup_html_desc")}</AlertDialogDescription>
+                </AlertDialogHeader>
+                <div className="flex flex-col gap-4">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs font-medium text-[var(--color-muted-foreground)]">
+                      {t("backup_pw_label")}
+                    </span>
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      value={bkPw}
+                      onChange={(e) => setBkPw(e.target.value)}
+                      placeholder={t("pw_rule_hint")}
+                      disabled={busy}
+                    />
+                  </label>
+                  <StrengthBar password={bkPw} />
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs font-medium text-[var(--color-muted-foreground)]">
+                      {t("pw_confirm_label")}
+                    </span>
+                    <Input
+                      type="password"
+                      autoComplete="new-password"
+                      value={bkPw2}
+                      onChange={(e) => setBkPw2(e.target.value)}
+                      disabled={busy}
+                    />
+                  </label>
+                  {bkPw2.length > 0 && bkPw !== bkPw2 ? (
+                    <p className="text-xs text-[var(--color-danger)]">{t("pw_mismatch")}</p>
+                  ) : null}
+                  <p className="text-xs text-[var(--color-danger)]">{t("backup_html_warn")}</p>
+                </div>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={busy}>{t("btn_cancel")}</AlertDialogCancel>
+                  <Button
+                    {...testId("vault-backup-html-submit")}
+                    onClick={downloadEncryptedBackup}
+                    disabled={busy || !scorePassword(bkPw).ok || bkPw !== bkPw2 || !bkPw2}
+                  >
+                    <Lock className="h-4 w-4" />
+                    {t("btn_download_html")}
+                  </Button>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </CardContent>
         </Card>
       </CenteredShell>

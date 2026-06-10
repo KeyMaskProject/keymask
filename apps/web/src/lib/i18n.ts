@@ -99,6 +99,23 @@ const zh = {
   pdf_risk_4: "输入助记词前,务必确认网址与上方一致,谨防钓鱼网站。",
   pdf_generated: (d: string) => `生成时间:${d}`,
   btn_review_again: "再看一遍助记词",
+  // 加密 HTML 备份
+  backup_more_options: "更多备份方式",
+  backup_pdf_option: "PDF 备份(明文,离线妥善保管)",
+  backup_html_option: "加密 HTML 备份(需备份密码)",
+  backup_html_title: "加密 HTML 备份",
+  backup_html_desc:
+    "生成可离线打开的单文件备份:任意浏览器双击打开,输入备份密码即可查看助记词。加密用 Argon2id + AES-256-GCM,全程在你的浏览器内完成。",
+  backup_pw_label: "备份密码",
+  backup_html_warn: "丢失备份密码 = 此备份作废,没有任何人(包括我们)能找回。",
+  btn_download_html: "加密并下载",
+  st_html_export_fail: (e: string) => `加密备份生成失败: ${e}`,
+  bk_title: "KeysArk 加密备份",
+  bk_prompt: "输入备份密码以解密助记词:",
+  bk_btn: "解密",
+  bk_decrypting: "解密中 …(约 1 秒)",
+  bk_wrong: "密码错误或文件已损坏",
+  bk_offline_note: "本文件完全离线工作,不会发出任何网络请求。解密只在你的浏览器内进行。",
 
   // 选择保险库
   select_title: "选择保险库",
@@ -379,6 +396,23 @@ const en: typeof zh = {
     "Before entering your phrase, make sure the URL matches the one above — beware of phishing.",
   pdf_generated: (d: string) => `Generated: ${d}`,
   btn_review_again: "Show the phrase again",
+  // Encrypted HTML backup
+  backup_more_options: "More backup options",
+  backup_pdf_option: "PDF backup (plaintext, keep offline)",
+  backup_html_option: "Encrypted HTML backup (needs a password)",
+  backup_html_title: "Encrypted HTML backup",
+  backup_html_desc:
+    "Generates a single offline file: open it in any browser, enter the backup password to reveal the phrase. Encrypted with Argon2id + AES-256-GCM, entirely in your browser.",
+  backup_pw_label: "Backup password",
+  backup_html_warn: "Lose the backup password and this backup is useless — no one (including us) can recover it.",
+  btn_download_html: "Encrypt & download",
+  st_html_export_fail: (e: string) => `encrypted backup failed: ${e}`,
+  bk_title: "KeysArk Encrypted Backup",
+  bk_prompt: "Enter the backup password to decrypt your phrase:",
+  bk_btn: "Decrypt",
+  bk_decrypting: "Decrypting… (~1 second)",
+  bk_wrong: "Wrong password or corrupted file",
+  bk_offline_note: "This file works fully offline and makes no network requests. Decryption happens only in your browser.",
 
   select_title: "Choose a vault",
   select_desc: "You have multiple vaults. Pick one and enter its recovery phrase.",
