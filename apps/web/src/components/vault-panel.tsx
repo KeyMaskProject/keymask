@@ -64,7 +64,7 @@ import {
   Upload,
 } from "lucide-react";
 import { Logo, Wordmark } from "./brand";
-import { ServiceProviderBadge, ServiceProviderIcon, providerDisplay } from "./service-provider";
+import { ServiceProviderBadge } from "./service-provider";
 import { HeaderControls } from "./controls";
 import { UserMenu } from "./user-menu";
 import { useLocale, useT } from "./providers";
@@ -1625,17 +1625,6 @@ export function VaultPanel({
               <Folder className="h-3 w-3 shrink-0" />
               <span className="truncate">{folderName}</span>
             </span>
-          ) : null}
-          {e.provider ? (
-            <Tooltip label={providerDisplay(e.provider).name}>
-              <span
-                className={`ml-auto flex shrink-0 items-center pl-1 ${
-                  active ? "" : "text-[var(--color-muted-foreground)]"
-                }`}
-              >
-                <ServiceProviderIcon provider={e.provider} className="h-3 w-3" />
-              </span>
-            </Tooltip>
           ) : null}
         </button>
       </div>
