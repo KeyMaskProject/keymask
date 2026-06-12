@@ -8,8 +8,6 @@
 // 助记词/明文绝不进网络;加解密用 @keysark/crypto(与 web 同一套实现)。
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { createInterface } from "node:readline";
-import { Writable } from "node:stream";
 import { join } from "node:path";
 import {
   DEFAULT_ARGON2ID_PARAMS,
@@ -22,6 +20,7 @@ import {
   type StrengthReason,
 } from "@keysark/crypto";
 import { keysarkDir } from "./config";
+import { askPassword, log } from "./ui";
 
 /** 解锁缓存有效期:15 分钟(对齐 web 闲置自动锁定默认值),命中滑动续期。 */
 const UNLOCK_TTL_MS = 15 * 60 * 1000;
@@ -147,36 +146,7 @@ export function clearUnlockCache(): void {
   rmSync(cachePath(), { force: true });
 }
 
-// ---------- 交互输入 ----------
-
-/** 可见输入(助记词等非密码内容)。 */
-export function promptVisible(question: string): Promise<string> {
-  return new Promise((resolve) => {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    rl.question(question, (answer) => {
-      rl.close();
-      resolve(answer);
-    });
-  });
-}
-
-/** 隐藏输入(密码):回显被吞掉,只在结束时换行。 */
-export function promptSecret(question: string): Promise<string> {
-  return new Promise((resolve) => {
-    process.stdout.write(question);
-    const muted = new Writable({
-      write(_chunk, _enc, cb) {
-        cb();
-      },
-    });
-    const rl = createInterface({ input: process.stdin, output: muted, terminal: true });
-    rl.question("", (answer) => {
-      rl.close();
-      process.stdout.write("\n");
-      resolve(answer);
-    });
-  });
-}
+// ---------- 交互输入(@clack/prompts,经 ./ui 封装) ----------
 
 const REASON_TEXT: Record<StrengthReason, string> = {
   too_short: "12+ chars",
@@ -184,21 +154,16 @@ const REASON_TEXT: Record<StrengthReason, string> = {
   weak_pattern: "too predictable",
 };
 
-/** 交互设置解锁密码:强度校验(与 web 同一套规则)+ 二次确认,直到合格。 */
+/** 交互设置解锁密码:强度校验(与 web 同一套规则,提交时校验)+ 二次确认,直到合格。 */
 export async function promptNewPassword(): Promise<string> {
   for (;;) {
-    const pw = await promptSecret("Set unlock password (12+ chars, 3+ classes): ");
-    const score = scorePassword(pw);
-    if (!score.ok) {
-      console.error(`✗ Weak password: ${score.reasons.map((r) => REASON_TEXT[r]).join(" · ")}`);
-      continue;
-    }
-    const pw2 = await promptSecret("Confirm: ");
-    if (pw !== pw2) {
-      console.error("✗ Mismatch, try again.");
-      continue;
-    }
-    return pw;
+    const pw = await askPassword("Set unlock password (12+ chars, 3+ classes)", (v) => {
+      const score = scorePassword(v);
+      return score.ok ? undefined : score.reasons.map((r) => REASON_TEXT[r]).join(" · ");
+    });
+    const pw2 = await askPassword("Confirm password");
+    if (pw === pw2) return pw;
+    log.error("Mismatch, try again.");
   }
 }
 
@@ -217,14 +182,14 @@ export async function acquireMnemonic(allowPrompt = true): Promise<string | null
   if (!allowPrompt || !process.stdin.isTTY) return null;
 
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const pw = await promptSecret("Unlock password: ");
+    const pw = await askPassword("Unlock password");
     if (!pw) continue;
     try {
       const mnemonic = await unlockCredential(pw);
       writeUnlockCache(mnemonic); // 输对密码 → 15 分钟内免重输
       return mnemonic;
     } catch {
-      console.error(attempt < 3 ? "✗ Wrong password, try again." : "✗ Wrong password.");
+      log.error(attempt < 3 ? "Wrong password, try again." : "Wrong password.");
     }
   }
   return null;

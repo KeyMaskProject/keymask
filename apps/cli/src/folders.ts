@@ -1,5 +1,6 @@
 // 文件夹路径工具:名字路径 ("a/b/c") ↔ folderId。
 import type { Vault } from "@keysark/vault";
+import { yellow } from "./colors";
 
 /** 每个文件夹 id → "a/b/c" 全路径(沿 parentId 上溯;断链层级忽略)。 */
 export function folderPathById(vault: Vault): Map<string, string> {
@@ -52,7 +53,7 @@ export async function resolveFolderPath(vault: Vault, path: string): Promise<str
       continue;
     }
     const res = await vault.addFolder(name, parentId);
-    if (!res.synced) console.error(`! Folder "${name}" created locally; sync failed: ${res.syncError}`);
+    if (!res.synced) console.error(yellow(`! Folder "${name}" created locally; sync failed: ${res.syncError}`));
     parentId = res.id;
   }
   return parentId;

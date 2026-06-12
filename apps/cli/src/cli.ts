@@ -14,12 +14,13 @@ import {
   clearCredential,
   hasCredential,
   promptNewPassword,
-  promptVisible,
   saveCredential,
   writeUnlockCache,
 } from "./credential";
+import { ERR, OK, bold, cyan, dim, green, red, yellow } from "./colors";
 import { folderPathById, lookupFolderPath, resolveFolderPath } from "./folders";
 import { detectSourceProvider, parseSaveTarget, proposeSaveTarget, targetDisplay } from "./save-target";
+import { askSelect, askText, note, spinner } from "./ui";
 import { fetchVaults, openVault, pickVault } from "./vault-select";
 
 interface Args {
@@ -58,7 +59,7 @@ function flagStr(flags: Args["flags"], key: string): string | undefined {
 }
 
 function fail(msg: string): never {
-  console.error(`✗ ${msg}`);
+  console.error(red(`✗ ${msg}`));
   process.exit(1);
 }
 
@@ -118,10 +119,10 @@ async function ready(
 }
 
 function fmtEntry(e: EntryMeta, folderPath?: string): string {
-  const id = e.id.slice(0, 8);
-  const when = e.updatedAt ? new Date(e.updatedAt).toISOString().slice(0, 16).replace("T", " ") : "";
-  const loc = folderPath ? `  [${folderPath}]` : "";
-  const src = e.provider ? `  (${e.provider})` : "";
+  const id = cyan(e.id.slice(0, 8));
+  const when = dim(e.updatedAt ? new Date(e.updatedAt).toISOString().slice(0, 16).replace("T", " ") : "");
+  const loc = folderPath ? dim(`  [${folderPath}]`) : "";
+  const src = e.provider ? yellow(`  (${e.provider})`) : "";
   return `${id}  ${when}  ${e.title || "(untitled)"}${loc}${src}`;
 }
 
@@ -173,6 +174,23 @@ Env:
   KEYSARK_MNEMONIC   Mnemonic (skips local credential; for scripts/CI)
   KEYSARK_NO_BROWSER Don't auto-open the browser on login`;
 
+/** 打印帮助:节标题加粗,命令、选项与环境变量名上色(HELP 文本本身保持纯文本)。 */
+function printHelp(): void {
+  for (const line of HELP.split("\n")) {
+    if (line.startsWith("ark — ")) {
+      console.log(bold("ark") + line.slice(3));
+    } else if (/^\S.*:$/.test(line)) {
+      console.log(bold(line));
+    } else {
+      console.log(
+        line
+          .replace(/^(  ark(?: \S+)+?)(  )/, (_m, a: string, sp: string) => cyan(a) + sp)
+          .replace(/^(  (?:--\S+|KEYSARK_\S+))/, (_m, a: string) => cyan(a)),
+      );
+    }
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
@@ -180,7 +198,7 @@ async function main() {
     case "help":
     case "--help":
     case "-h":
-      console.log(HELP);
+      printHelp();
       return;
 
     case "import": {
@@ -188,10 +206,15 @@ async function main() {
       const transport = transportFrom(args);
       if (!process.stdin.isTTY) fail("import requires an interactive terminal.");
 
-      const raw = (await promptVisible("Enter 12-word mnemonic: ")).trim().replace(/\s+/g, " ");
-      if (!validateMnemonic(raw)) fail("Invalid mnemonic (check the 12 words).");
+      const raw = (
+        await askText("Enter 12-word mnemonic", {
+          validate: (v) => (validateMnemonic(v.trim().replace(/\s+/g, " ")) ? undefined : "Invalid mnemonic (check the 12 words)"),
+        })
+      )
+        .trim()
+        .replace(/\s+/g, " ");
 
-      console.log("Verifying…");
+      console.log(dim("Verifying…"));
       const key = await deriveKey(raw);
       const vaults = await fetchVaults(transport);
       if (vaults.length === 0) fail("No vaults found. Create one on the web first.");
@@ -205,20 +228,20 @@ async function main() {
       await saveCredential(raw, pw);
       writeUnlockCache(raw); // 刚导入视同刚解锁:15 分钟内免密
       const names = matches.map((v) => `${v.label || "(default)"} [${v.id.slice(0, 8)}]`).join(", ");
-      console.log(`✓ Imported. Matched vaults: ${names}`);
-      console.log("  Commands will ask for the unlock password (cached 15 min).");
+      console.log(`${OK} Imported. Matched vaults: ${names}`);
+      console.log(dim("  Commands will ask for the unlock password (cached 15 min)."));
       return;
     }
 
     case "forget":
       clearCredential();
-      console.log("✓ Local mnemonic credential removed.");
+      console.log(`${OK} Local mnemonic credential removed.`);
       return;
 
     case "status": {
       const cloud = loadCloud();
-      console.log(cloud ? `Login: ✓ ${cloud.server} (${cloud.provider ?? "?"})` : "Login: ✗ (run `ark login`)");
-      console.log(hasCredential() ? "Mnemonic: ✓ imported (encrypted)" : "Mnemonic: ✗ (run `ark import`)");
+      console.log(cloud ? `Login: ${OK} ${cloud.server} ${dim(`(${cloud.provider ?? "?"})`)}` : `Login: ${ERR} ${dim("(run `ark login`)")}`);
+      console.log(hasCredential() ? `Mnemonic: ${OK} ${dim("imported (encrypted)")}` : `Mnemonic: ${ERR} ${dim("(run `ark import`)")}`);
       return;
     }
 
@@ -231,11 +254,11 @@ async function main() {
         "cloud.json": "login state",
         default: "built-in default",
       }[conn.source];
-      console.log(`Version: ${cliVersion()}`);
-      console.log(`Default server: ${defaultServer()}`);
-      console.log(`Server: ${conn.baseUrl} (${sourceLabel})`);
-      console.log(cloud ? `Login: ✓ ${cloud.server} (${cloud.provider ?? "?"})` : "Login: ✗ (run `ark login`)");
-      console.log(`Config dir: ${keysarkDir()}`);
+      console.log(`${dim("Version:")} ${cliVersion()}`);
+      console.log(`${dim("Default server:")} ${defaultServer()}`);
+      console.log(`${dim("Server:")} ${conn.baseUrl} ${dim(`(${sourceLabel})`)}`);
+      console.log(cloud ? `Login: ${OK} ${cloud.server} ${dim(`(${cloud.provider ?? "?"})`)}` : `Login: ${ERR} ${dim("(run `ark login`)")}`);
+      console.log(`${dim("Config dir:")} ${keysarkDir()}`);
       return;
     }
 
@@ -260,16 +283,27 @@ async function main() {
         expires_in?: number;
       };
 
-      console.log(`Open this link in a browser to authorize (any device):\n`);
-      console.log(`  ${d.verification_url}\n`);
-      console.log(`Code: ${d.user_code} (must match the one shown in the browser)\n`);
+      const tty = process.stdout.isTTY === true;
+      if (tty) {
+        note(`${cyan(d.verification_url)}\n\nCode: ${bold(yellow(d.user_code))} ${dim("(must match the browser)")}`, "Authorize in browser");
+      } else {
+        console.log(`Open this link in a browser to authorize (any device):\n`);
+        console.log(`  ${cyan(d.verification_url)}\n`);
+        console.log(`Code: ${bold(yellow(d.user_code))} ${dim("(must match the one shown in the browser)")}\n`);
+      }
       if (!args.flags["no-browser"] && !process.env.KEYSARK_NO_BROWSER) {
         tryOpenBrowser(d.verification_url);
       }
 
       const intervalMs = Math.max(2, d.interval ?? 3) * 1000;
       const deadline = Date.now() + (d.expires_in ?? 600) * 1000;
-      process.stdout.write("Waiting for approval ");
+      const sp = tty ? spinner() : null;
+      if (sp) sp.start("Waiting for approval");
+      else process.stdout.write(dim("Waiting for approval "));
+      const stop = (msg: string) => {
+        if (sp) sp.stop(msg);
+        else console.log();
+      };
       while (Date.now() < deadline) {
         await sleep(intervalMs);
         let pd: { status?: string; token?: string; provider?: string } = {};
@@ -281,24 +315,24 @@ async function main() {
           });
           pd = (await pr.json()) as typeof pd;
         } catch {
-          process.stdout.write("!"); // 网络抖动,继续轮询
+          if (!sp) process.stdout.write("!"); // 网络抖动,继续轮询
           continue;
         }
         if (pd.status === "pending") {
-          process.stdout.write(".");
+          if (!sp) process.stdout.write(".");
           continue;
         }
-        console.log();
         if (pd.status === "approved" && pd.token) {
           saveCloud({ server, token: pd.token, provider: pd.provider });
-          console.log(`✓ Logged in: ${server} (${pd.provider ?? "?"})`);
-          if (!hasCredential()) console.log("  Next: ark import");
+          stop(`${OK} Logged in: ${server} ${dim(`(${pd.provider ?? "?"})`)}`);
+          if (!hasCredential()) console.log(dim("  Next: ark import"));
           return;
         }
+        stop("");
         if (pd.status === "denied") fail("Authorization denied.");
         fail("Authorization expired. Run `ark login` again.");
       }
-      console.log();
+      stop("");
       fail("Timed out. Run `ark login` again.");
       return;
     }
@@ -306,7 +340,7 @@ async function main() {
     case "logout": {
       const cloud = loadCloud();
       if (!cloud) {
-        console.log("(not logged in)");
+        console.log(dim("(not logged in)"));
         return;
       }
       try {
@@ -319,8 +353,8 @@ async function main() {
         /* 服务端不可达,本地仍登出 */
       }
       clearCloud();
-      console.log(`✓ Logged out of ${cloud.server}.`);
-      if (hasCredential()) console.log("  Mnemonic credential kept; run `ark forget` to remove.");
+      console.log(`${OK} Logged out of ${cloud.server}.`);
+      if (hasCredential()) console.log(dim("  Mnemonic credential kept; run `ark forget` to remove."));
       return;
     }
 
@@ -331,12 +365,12 @@ async function main() {
       const key = await deriveKey(mnemonic!);
       const vaults = await fetchVaults(transport);
       if (vaults.length === 0) {
-        console.log("(no vaults)");
+        console.log(dim("(no vaults)"));
         return;
       }
       for (const v of vaults) {
         const ok = await checkVerifier(key, b64decode(v.verifier));
-        console.log(`${ok ? "●" : "○"} ${v.label || "(default)"}  [${v.id.slice(0, 8)}]  dir=${v.dir || "/"}`);
+        console.log(`${ok ? green("●") : dim("○")} ${v.label || "(default)"}  ${cyan(`[${v.id.slice(0, 8)}]`)}  ${dim(`dir=${v.dir || "/"}`)}`);
       }
       return;
     }
@@ -345,7 +379,7 @@ async function main() {
       const { vault } = await ready(args);
       const entries = vault.entries;
       if (entries.length === 0) {
-        console.log("(empty)");
+        console.log(dim("(empty)"));
         return;
       }
       const paths = folderPathById(vault);
@@ -359,7 +393,7 @@ async function main() {
       const { vault } = await ready(args);
       const meta = findEntry(vault, idArg!);
       const doc = await vault.open(meta.id);
-      console.log(`# ${doc.title || "(untitled)"}\n`);
+      console.log(`${bold(`# ${doc.title || "(untitled)"}`)}\n`);
       console.log(doc.content);
       return;
     }
@@ -373,7 +407,7 @@ async function main() {
       const folderId = folderPath !== undefined ? await resolveFolderPath(vault, folderPath) : null;
       const res = await vault.save({ title, content: content ?? "", folderId });
       console.log(
-        `✓ Created [${res.id.slice(0, 8)}]${res.synced ? ", synced" : ` (local; sync failed: ${res.syncError})`}`,
+        `${OK} Created ${cyan(`[${res.id.slice(0, 8)}]`)}${res.synced ? dim(", synced") : red(` (local; sync failed: ${res.syncError})`)}`,
       );
       return;
     }
@@ -402,29 +436,37 @@ async function main() {
 
       const { vault } = await ready(args);
 
-      console.log(`Source: ${abs}`);
       if (explicit) {
-        console.log(`Target: ${targetDisplay(target!)}`);
-      } else {
-        console.log(`Detected target: ${targetDisplay(target!)}${target!.note ? ` (${target!.note})` : ""}`);
-        if (process.stdin.isTTY) {
-          const input = (
-            await promptVisible("Enter to accept, or type a target (q to cancel): ")
-          ).trim();
-          if (input.toLowerCase() === "q") {
-            console.log("Cancelled.");
-            return;
-          }
-          if (input) {
-            const custom = parseSaveTarget(input, abs);
-            if (!custom) fail(`Invalid target: ${input}`);
-            custom.provider ??= detectSourceProvider(abs);
-            target = custom;
-            console.log(`Target: ${targetDisplay(target)}`);
-          }
-        } else {
-          console.log("(non-interactive: using detected target)");
+        console.log(`${dim("Source:")} ${abs}`);
+        console.log(`${dim("Target:")} ${bold(targetDisplay(target!))}`);
+      } else if (process.stdin.isTTY && process.stdout.isTTY) {
+        // 醒目的目标确认:框出 源 → 目标,单选采用 / 改 / 取消。
+        note(
+          `${dim("source")}  ${abs}\n${dim("target")}  ${bold(targetDisplay(target!))}${target!.note ? dim(`  (${target!.note})`) : ""}`,
+          "ark save",
+        );
+        const choice = await askSelect("Save to this target?", [
+          { value: "use", label: `Use ${targetDisplay(target!)}`, hint: target!.note },
+          { value: "custom", label: "Enter a different target…" },
+          { value: "cancel", label: "Cancel" },
+        ]);
+        if (choice === "cancel") {
+          console.log(yellow("Cancelled."));
+          return;
         }
+        if (choice === "custom") {
+          const input = await askText("Target", {
+            placeholder: 'a/b/title (trailing "/" keeps the filename)',
+            validate: (v) => (parseSaveTarget(v.trim(), abs) ? undefined : "Invalid target"),
+          });
+          const custom = parseSaveTarget(input.trim(), abs)!;
+          custom.provider ??= detectSourceProvider(abs);
+          target = custom;
+        }
+      } else {
+        console.log(`${dim("Source:")} ${abs}`);
+        console.log(`${dim("Target:")} ${bold(targetDisplay(target!))}${target!.note ? dim(` (${target!.note})`) : ""}`);
+        console.log(dim("(non-interactive: using detected target)"));
       }
       const { folderPath, title, provider } = target!;
 
@@ -441,25 +483,25 @@ async function main() {
         existing?.contentHash &&
         existing.contentHash === (await sha256Hex(new TextEncoder().encode(content)))
       ) {
-        console.log(`✓ Up to date with the latest version (${existing.versions ?? 1} total); nothing to save.`);
+        console.log(`${OK} Up to date with the latest version (${existing.versions ?? 1} total); nothing to save.`);
         if (provider && provider !== existing.provider) {
           // 内容不动,仅补来源标记(元数据更新,不产生新版本)。
           const res = await vault.save({ id: existing.id, title, content, folderId: existing.folderId, provider });
-          console.log(`  Provider tag set (${provider})${res.synced ? ", synced" : ` (local; sync failed: ${res.syncError})`}`);
+          console.log(`  Provider tag set ${yellow(`(${provider})`)}${res.synced ? dim(", synced") : red(` (local; sync failed: ${res.syncError})`)}`);
         }
         return;
       }
 
       if (existing) {
         console.log(
-          `Target exists [${existing.id.slice(0, 8)}] (${existing.versions ?? 1} versions); will save as its latest version.`,
+          yellow(`Target exists [${existing.id.slice(0, 8)}] (${existing.versions ?? 1} versions); will save as its latest version.`),
         );
       }
 
       const folderId = folderPath !== undefined ? await resolveFolderPath(vault, folderPath) : null;
       const res = await vault.save({ id: existing?.id, title, content, folderId, provider });
       console.log(
-        `✓ ${existing ? "Updated" : "Created"} ${display} [${res.id.slice(0, 8)}]${provider ? ` (${provider})` : ""}${res.synced ? ", synced" : ` (local; sync failed: ${res.syncError})`}`,
+        `${OK} ${existing ? "Updated" : "Created"} ${bold(display)} ${cyan(`[${res.id.slice(0, 8)}]`)}${provider ? yellow(` (${provider})`) : ""}${res.synced ? dim(", synced") : red(` (local; sync failed: ${res.syncError})`)}`,
       );
       return;
     }
@@ -477,7 +519,7 @@ async function main() {
       const folderId =
         folderPath !== undefined ? await resolveFolderPath(vault, folderPath) : cur.folderId;
       const res = await vault.save({ id: meta.id, title, content, folderId });
-      console.log(`✓ Updated [${meta.id.slice(0, 8)}]${res.synced ? ", synced" : ` (local; ${res.syncError})`}`);
+      console.log(`${OK} Updated ${cyan(`[${meta.id.slice(0, 8)}]`)}${res.synced ? dim(", synced") : red(` (local; ${res.syncError})`)}`);
       return;
     }
 
@@ -487,14 +529,14 @@ async function main() {
       const { vault } = await ready(args);
       const meta = findEntry(vault, idArg!);
       const res = await vault.remove(meta.id);
-      console.log(`✓ Deleted [${meta.id.slice(0, 8)}]${res.synced ? ", synced" : ` (local; ${res.syncError})`}`);
+      console.log(`${OK} Deleted ${cyan(`[${meta.id.slice(0, 8)}]`)}${res.synced ? dim(", synced") : red(` (local; ${res.syncError})`)}`);
       return;
     }
 
     case "sync": {
       const { vault } = await ready(args);
       const { remaining } = await vault.sync();
-      console.log(remaining === 0 ? "✓ All synced" : `${remaining} pending`);
+      console.log(remaining === 0 ? `${OK} All synced` : yellow(`${remaining} pending`));
       return;
     }
 
