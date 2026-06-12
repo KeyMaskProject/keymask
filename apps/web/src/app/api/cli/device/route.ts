@@ -7,12 +7,17 @@ import {
   generateUserCode,
   sha256Hex,
 } from "@/lib/cli-auth";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
 // CLI 发起设备码授权:生成 device_code(给 CLI 轮询)+ user_code(给人核对),
 // 返回网页授权链接。无需登录态 —— 授权动作发生在网页侧。
 export async function POST(request: Request) {
+  // 防刷码:每 IP 每分钟最多 10 次发起。
+  const limited = enforceRateLimit(request, { bucket: "cli-device", limit: 10, windowMs: 60_000 });
+  if (limited) return limited;
+
   const deviceCode = generateDeviceCode();
   const userCode = generateUserCode();
   try {

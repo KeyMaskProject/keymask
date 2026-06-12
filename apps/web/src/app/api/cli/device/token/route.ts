@@ -5,12 +5,17 @@ import {
   getCliAuthRequestByDeviceHash,
 } from "@keysark/db";
 import { generateCliToken, sha256Hex } from "@/lib/cli-auth";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
 // CLI 轮询:device_code 换令牌。approved → 原子消费、颁发一次性明文令牌;
 // pending → 继续等;不存在/已消费/过期 → 终止轮询。
 export async function POST(request: Request) {
+  // 合法轮询约 20 次/分钟;留宽到 120/分钟,挡住高频暴力枚举 device_code。
+  const limited = enforceRateLimit(request, { bucket: "cli-poll", limit: 120, windowMs: 60_000 });
+  if (limited) return limited;
+
   let deviceCode = "";
   try {
     const body = (await request.json()) as { device_code?: string };

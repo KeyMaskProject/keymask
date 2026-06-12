@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { readReturnTo, stashReturnTo, RETURN_TO_COOKIE } from "./return-to";
+import { signSession, verifySession, sessionCookieOptions } from "./session-cookie";
 import {
   BaiduPanClient,
   buildAuthorizeUrl,
@@ -20,6 +21,7 @@ const PROVIDER = "baidu";
 const STATE_COOKIE = "baidu_oauth_state";
 export const UK_COOKIE = "baidu_uk";
 const REFRESH_SKEW_MS = 60_000;
+const SESSION_MAX_AGE = 60 * 60 * 24 * 30; // 30 天
 
 export interface ConnectedBaidu {
   client: BaiduPanClient;
@@ -28,7 +30,7 @@ export interface ConnectedBaidu {
 
 /** 取已连接的百度客户端(cookie 路径)。未连接返回 null。 */
 export async function getConnectedBaidu(): Promise<ConnectedBaidu | null> {
-  const uk = (await cookies()).get(UK_COOKIE)?.value;
+  const uk = verifySession((await cookies()).get(UK_COOKIE)?.value);
   if (!uk) return null;
   return getConnectedBaiduByUk(uk);
 }
@@ -62,6 +64,7 @@ export async function handleLogin(request?: Request): Promise<NextResponse> {
   res.cookies.set(STATE_COOKIE, state, {
     httpOnly: true,
     sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: 600,
   });
@@ -95,12 +98,11 @@ export async function handleCallback(request: Request): Promise<NextResponse> {
       scope: token.scope,
     });
     const res = NextResponse.redirect(new URL(await readReturnTo(), request.url));
-    res.cookies.set(UK_COOKIE, uk, {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 30,
-    });
+    res.cookies.set(
+      UK_COOKIE,
+      signSession(uk, SESSION_MAX_AGE),
+      sessionCookieOptions(SESSION_MAX_AGE),
+    );
     res.cookies.delete(STATE_COOKIE);
     res.cookies.delete(RETURN_TO_COOKIE);
     return res;

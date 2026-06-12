@@ -40,8 +40,19 @@ import {
   type VersionMeta,
 } from "./types";
 
+/** load 检测到网盘 index 版本回退(rev 低于本地已接受值)时抛出。 */
+export class VaultRollbackError extends Error {
+  constructor(
+    readonly localRev: number,
+    readonly remoteRev: number,
+  ) {
+    super(`vault index rollback detected: remote rev ${remoteRev} < local rev ${localRev}`);
+    this.name = "VaultRollbackError";
+  }
+}
+
 function emptyIndex(): IndexDoc {
-  return { v: 2, entries: [], folders: [] };
+  return { v: 2, entries: [], folders: [], rev: 0 };
 }
 
 /**
@@ -68,15 +79,15 @@ function normalizeIndex(raw: unknown): IndexDoc {
         };
       })
     : [];
-  return { v: 2, entries, folders };
+  return { v: 2, entries, folders, rev: typeof r.rev === "number" ? r.rev : 0 };
 }
 
-// ---------- 加解密 JSON ----------
-async function encJson(key: CryptoKey, obj: unknown): Promise<Uint8Array> {
-  return encryptToEnvelope(key, JSON.stringify(obj));
+// ---------- 加解密 JSON(aad 绑定逻辑位置,防替换/回滚) ----------
+async function encJson(key: CryptoKey, obj: unknown, aad?: string): Promise<Uint8Array> {
+  return encryptToEnvelope(key, JSON.stringify(obj), aad);
 }
-async function decJson<T>(key: CryptoKey, bytes: Uint8Array): Promise<T> {
-  return JSON.parse(await decryptFromEnvelope(key, bytes)) as T;
+async function decJson<T>(key: CryptoKey, bytes: Uint8Array, aad?: string): Promise<T> {
+  return JSON.parse(await decryptFromEnvelope(key, bytes, aad)) as T;
 }
 
 function sortEntries(entries: EntryMeta[]): EntryMeta[] {
@@ -133,6 +144,24 @@ export class Vault {
     return joinPath(this.versionsDir(id), `${ts}.bin`);
   }
 
+  // ---------- AAD 上下文:把密文绑定到其逻辑位置/身份(防跨位置替换、跨版本回滚) ----------
+  /** index 绑定到本库 dir(防跨库 index 替换)。 */
+  private idxAad(): string {
+    return `ksv1|idx|${this.dir}`;
+  }
+  /** 条目文本快照绑定到 (id, 版本时间戳)。 */
+  private docAad(id: string, ts: number): string {
+    return `ksv1|doc|${id}|${ts}`;
+  }
+  /** 文件 blob 绑定到 (id, 版本时间戳)。 */
+  private blobAad(id: string, ts: number): string {
+    return `ksv1|blob|${id}|${ts}`;
+  }
+  /** index 每次写入前 +1(单调,供 load 回滚检测)。 */
+  private bumpRev(): void {
+    this.index.rev = (this.index.rev ?? 0) + 1;
+  }
+
   get entries(): EntryMeta[] {
     return sortEntries(this.index.entries);
   }
@@ -140,23 +169,30 @@ export class Vault {
     return this.cache.pendingCount();
   }
 
-  /** 解锁后加载:以网盘 index.json 为准,失败则回退本地缓存。 */
+  /**
+   * 解锁后加载:以网盘 index.json 为准,失败则回退本地缓存。
+   * 回滚检测:本地非 pending(已同步)且网盘 index rev 低于上次接受的 rev → 抛 VaultRollbackError
+   * (恶意/被入侵的存储后端回滚到旧 index)。本地 pending 时跳过(本地领先是合法的)。
+   */
   async load(): Promise<EntryMeta[]> {
     try {
       this.fileMap = await this.transport.list(this.dir);
       const idxFile = this.fileMap.get(INDEX_NAME);
       if (idxFile) {
         const bytes = await this.transport.download(idxFile.id);
-        this.index = normalizeIndex(await decJson<unknown>(this.key, bytes));
+        const remote = normalizeIndex(await decJson<unknown>(this.key, bytes, this.idxAad()));
+        await this.assertNoRollback(remote);
+        this.index = remote;
         this.cache.setIndex(b64encode(bytes), false);
         return this.entries;
       }
-    } catch {
+    } catch (err) {
+      if (err instanceof VaultRollbackError) throw err;
       // 网盘不可达 → 用本地缓存(离线可读)
       const cached = this.cache.getIndex();
       if (cached) {
         try {
-          this.index = normalizeIndex(await decJson<unknown>(this.key, b64decode(cached)));
+          this.index = normalizeIndex(await decJson<unknown>(this.key, b64decode(cached), this.idxAad()));
         } catch {
           this.index = emptyIndex();
         }
@@ -167,24 +203,47 @@ export class Vault {
     return this.entries;
   }
 
+  /** 比对本地已接受的 index rev(缓存,非 pending 才算)与网盘 rev,检出回滚。 */
+  private async assertNoRollback(remote: IndexDoc): Promise<void> {
+    if (this.cache.indexPending()) return; // 本地有未同步改动,领先是合法的
+    const cached = this.cache.getIndex();
+    if (!cached) return;
+    let prevRev: number;
+    try {
+      const prev = normalizeIndex(await decJson<unknown>(this.key, b64decode(cached), this.idxAad()));
+      prevRev = prev.rev ?? 0;
+    } catch {
+      return; // 缓存损坏/无法解密 → 无从比较,放行
+    }
+    if ((remote.rev ?? 0) < prevRev) throw new VaultRollbackError(prevRev, remote.rev ?? 0);
+  }
+
   /** 打开条目(当前版):本地优先,未命中再回网盘读 items/<id>/<updatedAt>.json。 */
   async open(id: string): Promise<EntryDoc> {
+    const meta = this.index.entries.find((e) => e.id === id);
+    if (!meta) throw new Error("entry not found");
+    const aad = this.docAad(id, meta.updatedAt);
     const cached = this.cache.getEntry(id);
     if (cached) {
       try {
-        return await decJson<EntryDoc>(this.key, b64decode(cached));
+        return this.verifyDoc(await decJson<EntryDoc>(this.key, b64decode(cached), aad), id);
       } catch {
-        /* 本地损坏 → 回网盘 */
+        /* 本地损坏/AAD 不符 → 回网盘 */
       }
     }
-    const meta = this.index.entries.find((e) => e.id === id);
-    if (!meta) throw new Error("entry not found");
     const versMap = await this.transport.list(this.versionsDir(id));
     const f = versMap.get(`${meta.updatedAt}.json`);
     if (!f) throw new Error("entry version not found on netdisk");
     const bytes = await this.transport.download(f.id);
+    const doc = this.verifyDoc(await decJson<EntryDoc>(this.key, bytes, aad), id);
     this.cache.setEntry(id, b64encode(bytes), false);
-    return decJson<EntryDoc>(this.key, bytes);
+    return doc;
+  }
+
+  /** 解密后再校验 doc.id 与请求一致(AAD 之外的纵深防御)。 */
+  private verifyDoc(doc: EntryDoc, id: string): EntryDoc {
+    if (doc.id !== id) throw new Error(`entry id mismatch: expected ${id}, got ${doc.id}`);
+    return doc;
   }
 
   /**
@@ -229,13 +288,14 @@ export class Vault {
 
     // 写一份新快照 → 版本数 +1(旧数据无 versions 时按已有 1 版计)。
     const versions = (existing ? (existing.versions ?? 1) : 0) + 1;
-    const entryEnvelope = await encJson(this.key, doc);
+    const entryEnvelope = await encJson(this.key, doc, this.docAad(id, now));
     const meta: EntryMeta = { id, title: input.title, folderId, createdAt, updatedAt: now, size: entryEnvelope.byteLength, contentHash, versions, ...(provider !== undefined ? { provider } : {}) };
     if (existing) {
       Object.assign(existing, meta);
       if (provider === undefined) delete existing.provider; // input.provider=null 显式清除
     } else this.index.entries.push(meta);
-    const indexEnvelope = await encJson(this.key, this.index);
+    this.bumpRev();
+    const indexEnvelope = await encJson(this.key, this.index, this.idxAad());
 
     // 1) 本地优先(标 pending)
     this.cache.setEntry(id, b64encode(entryEnvelope), true);
@@ -311,8 +371,8 @@ export class Vault {
 
     // 写一份新快照 → 版本数 +1(旧数据无 versions 时按已有 1 版计)。
     const versions = (existing ? (existing.versions ?? 1) : 0) + 1;
-    const blob = await encryptBytesToBlob(this.key, input.bytes);
-    const entryEnvelope = await encJson(this.key, doc);
+    const blob = await encryptBytesToBlob(this.key, input.bytes, this.blobAad(id, now));
+    const entryEnvelope = await encJson(this.key, doc, this.docAad(id, now));
     const meta: EntryMeta = {
       id,
       title: input.title,
@@ -329,7 +389,8 @@ export class Vault {
     };
     if (existing) Object.assign(existing, meta);
     else this.index.entries.push(meta);
-    const indexEnvelope = await encJson(this.key, this.index);
+    this.bumpRev();
+    const indexEnvelope = await encJson(this.key, this.index, this.idxAad());
 
     // 本地优先:元信息信封进缓存(标 pending);文件 blob 不进 localStorage(可达 100MB,会爆配额)。
     this.cache.setEntry(id, b64encode(entryEnvelope), true);
@@ -360,7 +421,7 @@ export class Vault {
     const f = versMap.get(`${meta.updatedAt}.bin`);
     if (!f) throw new Error("file blob not found on netdisk");
     const blob = await this.transport.download(f.id);
-    return decryptBytesFromBlob(this.key, blob);
+    return decryptBytesFromBlob(this.key, blob, this.blobAad(id, meta.updatedAt));
   }
 
   // ---------- 历史版本(冷路径;只在用户主动查看历史时触发,不在开/存当前版的热路径) ----------
@@ -395,7 +456,7 @@ export class Vault {
     const f = map.get(`${ts}.json`);
     if (!f) throw new Error("version not found on netdisk");
     const bytes = await this.transport.download(f.id);
-    return decJson<EntryDoc>(this.key, bytes);
+    return this.verifyDoc(await decJson<EntryDoc>(this.key, bytes, this.docAad(id, ts)), id);
   }
 
   /** 读某文件条目某版本的原始字节。 */
@@ -404,7 +465,7 @@ export class Vault {
     const f = map.get(`${ts}.bin`);
     if (!f) throw new Error("file version not found on netdisk");
     const blob = await this.transport.download(f.id);
-    return decryptBytesFromBlob(this.key, blob);
+    return decryptBytesFromBlob(this.key, blob, this.blobAad(id, ts));
   }
 
   /**
@@ -461,7 +522,8 @@ export class Vault {
   }
 
   private async persistIndex(): Promise<{ synced: boolean; syncError?: string }> {
-    const env = await encJson(this.key, this.index);
+    this.bumpRev();
+    const env = await encJson(this.key, this.index, this.idxAad());
     this.cache.setIndex(b64encode(env), true);
     try {
       await this.transport.upload(this.indexPath(), env);

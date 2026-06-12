@@ -1,9 +1,11 @@
+import { sql } from "drizzle-orm";
 import { pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { newId } from "./id";
 
 // 存储后端授权 token,按 (provider, accountKey) 存。
 // provider: "baidu"(accountKey=百度 uk)| "google"(accountKey=Google sub)。
-// token 开发期明文存储 —— 上线应加密。
+// access/refresh token 字段在应用层信封加密后落库(KEYSARK_DB_ENCRYPTION_KEY,见 secret-box.ts);
+// 未配置主密钥时回退明文(仅开发态)。
 export const storageAccount = pgTable(
   "storage_account",
   {
@@ -39,7 +41,7 @@ export const cliAuthRequest = pgTable("cli_auth_request", {
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
 });
 
-/** CLI 长期访问令牌:权限等价一份浏览器登录态(只搬运密文),可吊销。 */
+/** CLI 长期访问令牌:权限等价一份浏览器登录态(只搬运密文),可吊销、有过期。 */
 export const cliToken = pgTable("cli_token", {
   id: text("id").primaryKey().$defaultFn(newId),
   /** 令牌明文只在颁发响应里出现一次;库里只存 SHA-256 hex。 */
@@ -48,5 +50,10 @@ export const cliToken = pgTable("cli_token", {
   accountKey: text("account_key").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   lastUsedAt: timestamp("last_used_at", { withTimezone: true }),
+  /** 过期时间(颁发时设定);超过即失效,与 revokedAt 一起决定可用性。
+   *  DB 默认 now()+90d:让历史行在 db:push 时安全回填,并兜底任何未显式赋值的插入。 */
+  expiresAt: timestamp("expires_at", { withTimezone: true })
+    .notNull()
+    .default(sql`now() + interval '90 days'`),
   revokedAt: timestamp("revoked_at", { withTimezone: true }),
 });

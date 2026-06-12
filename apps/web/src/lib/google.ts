@@ -1,6 +1,7 @@
 import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import { readReturnTo, stashReturnTo, RETURN_TO_COOKIE } from "./return-to";
+import { signSession, verifySession, sessionCookieOptions } from "./session-cookie";
 import {
   GoogleDriveClient,
   buildAuthorizeUrl,
@@ -26,6 +27,7 @@ const PROVIDER = "google";
 const STATE_COOKIE = "google_oauth_state";
 export const GOOGLE_UID_COOKIE = "google_uid";
 const REFRESH_SKEW_MS = 60_000;
+const SESSION_MAX_AGE = 60 * 60 * 24 * 30; // 30 天
 
 /** 由配置推导客户端存储位置:设置了 GOOGLE_DRIVE_FOLDER → 根下可见文件夹;否则 → 隐藏 appDataFolder。 */
 function driveOptions(config: GoogleConfig): DriveOptions {
@@ -53,7 +55,7 @@ export interface ConnectedGoogle {
 
 /** 取已连接的 Google Drive 客户端(读会话 cookie 决定账号)。未连接返回 null。 */
 export async function getConnectedGoogle(): Promise<ConnectedGoogle | null> {
-  const sub = (await cookies()).get(GOOGLE_UID_COOKIE)?.value;
+  const sub = verifySession((await cookies()).get(GOOGLE_UID_COOKIE)?.value);
   if (!sub) return null;
   return getConnectedGoogleBySub(sub);
 }
@@ -97,6 +99,7 @@ export async function handleGoogleLogin(request?: Request): Promise<NextResponse
   res.cookies.set(STATE_COOKIE, state, {
     httpOnly: true,
     sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
     path: "/",
     maxAge: 600,
   });
@@ -138,12 +141,11 @@ export async function handleGoogleCallback(request: Request): Promise<NextRespon
       scope: token.scope,
     });
     const res = NextResponse.redirect(new URL(await readReturnTo(), request.url));
-    res.cookies.set(GOOGLE_UID_COOKIE, sub, {
-      httpOnly: true,
-      sameSite: "lax",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 30,
-    });
+    res.cookies.set(
+      GOOGLE_UID_COOKIE,
+      signSession(sub, SESSION_MAX_AGE),
+      sessionCookieOptions(SESSION_MAX_AGE),
+    );
     res.cookies.delete(STATE_COOKIE);
     res.cookies.delete(RETURN_TO_COOKIE);
     return res;

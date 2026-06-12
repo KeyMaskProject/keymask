@@ -1,5 +1,11 @@
 import { NextResponse } from "next/server";
 import { getStorageForRequest } from "@/lib/storage";
+import {
+  PayloadTooLargeError,
+  readBodyLimited,
+  rejectIfTooLargeByHeader,
+  tooLargeResponse,
+} from "@/lib/request-limits";
 
 export const runtime = "nodejs";
 
@@ -20,10 +26,20 @@ export async function GET(request: Request) {
 
 // 保存/更新文件。Body 为不透明 base64 字节(内容由客户端加密,服务端不解读)。
 export async function POST(request: Request) {
+  const tooLarge = rejectIfTooLargeByHeader(request);
+  if (tooLarge) return tooLarge;
+
   const conn = await getStorageForRequest(request);
   if (!conn) return NextResponse.json({ error: "not_connected" }, { status: 401 });
 
-  const body = (await request.json()) as { path?: string; contentB64?: string };
+  let body: { path?: string; contentB64?: string };
+  try {
+    const raw = await readBodyLimited(request); // 硬上限 + 流式,防超大 JSON 进内存
+    body = JSON.parse(new TextDecoder().decode(raw)) as typeof body;
+  } catch (err) {
+    if (err instanceof PayloadTooLargeError) return tooLargeResponse();
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
   const path = (body.path ?? "").trim();
   if (!path) return NextResponse.json({ error: "path_required" }, { status: 400 });
 

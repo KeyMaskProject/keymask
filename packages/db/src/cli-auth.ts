@@ -1,10 +1,13 @@
 // CLI 设备码授权的读写。仅云端 Postgres 模式可用(直连 drizzle,不走可插拔 token-store);
 // 桌面 JSON 模式没有 DATABASE_URL,调用会抛错 —— 桌面场景走 local.json token,不经这里。
-import { and, eq, isNull, lt } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt } from "drizzle-orm";
 import { getDb } from "./db";
 import { cliAuthRequest, cliToken } from "./schema";
 
 export type CliAuthStatus = "pending" | "approved" | "consumed" | "denied";
+
+/** CLI 令牌默认有效期:90 天。到期后强制重新 `ark login`。 */
+export const CLI_TOKEN_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 
 export interface CliAuthRequestRecord {
   id: string;
@@ -111,17 +114,30 @@ export async function createCliToken(input: {
   tokenHash: string;
   provider: string;
   accountKey: string;
+  /** 过期时间;缺省按 CLI_TOKEN_TTL_MS 计算。 */
+  expiresAt?: Date;
 }): Promise<void> {
-  await getDb().insert(cliToken).values(input);
+  await getDb().insert(cliToken).values({
+    tokenHash: input.tokenHash,
+    provider: input.provider,
+    accountKey: input.accountKey,
+    expiresAt: input.expiresAt ?? new Date(Date.now() + CLI_TOKEN_TTL_MS),
+  });
 }
 
-/** 按令牌哈希取未吊销的 CLI token(/api/files* 鉴权用),顺手记 lastUsedAt。 */
+/** 按令牌哈希取未吊销且未过期的 CLI token(/api/files* 鉴权用),顺手记 lastUsedAt。 */
 export async function getCliTokenByHash(tokenHash: string): Promise<CliTokenRecord | null> {
   const db = getDb();
   const rows = await db
     .update(cliToken)
     .set({ lastUsedAt: new Date() })
-    .where(and(eq(cliToken.tokenHash, tokenHash), isNull(cliToken.revokedAt)))
+    .where(
+      and(
+        eq(cliToken.tokenHash, tokenHash),
+        isNull(cliToken.revokedAt),
+        gt(cliToken.expiresAt, new Date()),
+      ),
+    )
     .returning({
       id: cliToken.id,
       provider: cliToken.provider,
@@ -136,4 +152,52 @@ export async function revokeCliTokenByHash(tokenHash: string): Promise<void> {
     .update(cliToken)
     .set({ revokedAt: new Date() })
     .where(and(eq(cliToken.tokenHash, tokenHash), isNull(cliToken.revokedAt)));
+}
+
+export interface CliTokenListItem {
+  id: string;
+  createdAt: Date;
+  lastUsedAt: Date | null;
+  expiresAt: Date;
+  revokedAt: Date | null;
+}
+
+/** 列出某账号下的全部 CLI 令牌(供用户侧「已授权设备」列表与撤销入口)。 */
+export async function listCliTokensByAccount(
+  provider: string,
+  accountKey: string,
+): Promise<CliTokenListItem[]> {
+  const rows = await getDb()
+    .select({
+      id: cliToken.id,
+      createdAt: cliToken.createdAt,
+      lastUsedAt: cliToken.lastUsedAt,
+      expiresAt: cliToken.expiresAt,
+      revokedAt: cliToken.revokedAt,
+    })
+    .from(cliToken)
+    .where(and(eq(cliToken.provider, provider), eq(cliToken.accountKey, accountKey)))
+    .orderBy(desc(cliToken.createdAt));
+  return rows;
+}
+
+/** 按 token id 吊销(用户侧撤销入口用;需校验属于当前账号)。幂等。 */
+export async function revokeCliTokenById(
+  id: string,
+  provider: string,
+  accountKey: string,
+): Promise<boolean> {
+  const rows = await getDb()
+    .update(cliToken)
+    .set({ revokedAt: new Date() })
+    .where(
+      and(
+        eq(cliToken.id, id),
+        eq(cliToken.provider, provider),
+        eq(cliToken.accountKey, accountKey),
+        isNull(cliToken.revokedAt),
+      ),
+    )
+    .returning({ id: cliToken.id });
+  return rows.length > 0;
 }

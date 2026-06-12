@@ -47,6 +47,8 @@ export interface IndexDoc {
   v: number;
   entries: EntryMeta[];
   folders: FolderMeta[];
+  /** 单调递增版本号:每次 index 写入 +1。load 时若网盘 rev < 本地已接受 rev → 判为回滚。 */
+  rev?: number;
 }
 export interface EntryDoc {
   id: string;

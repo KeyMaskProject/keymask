@@ -55,13 +55,22 @@ export interface Cipher {
   ct: Uint8Array;
 }
 
-export async function encrypt(key: CryptoKey, plaintext: Uint8Array): Promise<Cipher> {
+// AES-GCM 可选 AAD(附加认证数据):不加密但参与认证标签。用于把密文绑定到其
+// 逻辑位置/身份(路径/条目 id/版本),恶意存储后端把 A 的密文塞到 B 的位置时,
+// AAD 不匹配 → GCM 解密失败 → 篡改/替换被检出。AAD 不入信封,由调用方按上下文重建。
+function gcmParams(iv: Uint8Array, aad?: Uint8Array): AesGcmParams {
+  const p: AesGcmParams = { name: "AES-GCM", iv: toArrayBuffer(iv) };
+  if (aad) p.additionalData = toArrayBuffer(aad);
+  return p;
+}
+
+export async function encrypt(
+  key: CryptoKey,
+  plaintext: Uint8Array,
+  aad?: Uint8Array,
+): Promise<Cipher> {
   const iv = crypto.getRandomValues(new Uint8Array(12)); // 96-bit,每次随机
-  const ct = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv: toArrayBuffer(iv) },
-    key,
-    toArrayBuffer(plaintext),
-  );
+  const ct = await crypto.subtle.encrypt(gcmParams(iv, aad), key, toArrayBuffer(plaintext));
   return { iv, ct: new Uint8Array(ct) };
 }
 
@@ -69,73 +78,91 @@ export async function decrypt(
   key: CryptoKey,
   iv: Uint8Array,
   ct: Uint8Array,
+  aad?: Uint8Array,
 ): Promise<Uint8Array> {
-  const pt = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: toArrayBuffer(iv) },
-    key,
-    toArrayBuffer(ct),
-  );
+  const pt = await crypto.subtle.decrypt(gcmParams(iv, aad), key, toArrayBuffer(ct));
   return new Uint8Array(pt);
 }
 
 interface Envelope {
-  v: 1;
+  v: 1 | 2; // v2:加密时绑定了 AAD(解密必须提供同一 AAD);v1:无 AAD(历史数据)
   alg: "A256GCM";
   kdf: "BIP39+HKDF-SHA256";
   iv: string;
   ct: string;
 }
 
-/** 明文字符串 → 加密 → envelope JSON 字节(存上网盘的格式)。 */
-export async function encryptToEnvelope(key: CryptoKey, plaintext: string): Promise<Uint8Array> {
-  const { iv, ct } = await encrypt(key, new TextEncoder().encode(plaintext));
+const enc = new TextEncoder();
+
+/** 明文字符串 → 加密 → envelope JSON 字节(存上网盘的格式)。传 aad 时绑定上下文(v2)。 */
+export async function encryptToEnvelope(
+  key: CryptoKey,
+  plaintext: string,
+  aad?: string,
+): Promise<Uint8Array> {
+  const aadBytes = aad !== undefined ? enc.encode(aad) : undefined;
+  const { iv, ct } = await encrypt(key, enc.encode(plaintext), aadBytes);
   const env: Envelope = {
-    v: 1,
+    v: aadBytes ? 2 : 1,
     alg: "A256GCM",
     kdf: "BIP39+HKDF-SHA256",
     iv: b64encode(iv),
     ct: b64encode(ct),
   };
-  return new TextEncoder().encode(JSON.stringify(env));
+  return enc.encode(JSON.stringify(env));
 }
 
 export async function decryptFromEnvelope(
   key: CryptoKey,
   envelopeBytes: Uint8Array,
+  aad?: string,
 ): Promise<string> {
   const env = JSON.parse(new TextDecoder().decode(envelopeBytes)) as Envelope;
-  const pt = await decrypt(key, b64decode(env.iv), b64decode(env.ct));
+  // v2 绑定了 AAD,必须用同一 AAD 解密;v1(历史)无 AAD,忽略传入 aad。
+  const aadBytes = env.v === 2 && aad !== undefined ? enc.encode(aad) : undefined;
+  const pt = await decrypt(key, b64decode(env.iv), b64decode(env.ct), aadBytes);
   return new TextDecoder().decode(pt);
 }
 
 // ---------- 二进制信封(文件密文专用,无 base64/JSON,省 33% 体积) ----------
-// 帧格式:magic(4B "KSF1") + ver(1B=1) + iv(12B) + ct(剩余全部)。
-// 文本条目继续用上面的 JSON 信封(兼容历史数据);大文件走这套裸字节帧。
+// 帧格式:magic(4B "KSF1") + ver(1B) + iv(12B) + ct(剩余全部)。
+// ver=1:无 AAD(历史);ver=2:加密时绑定了 AAD(解密需提供同一 AAD)。
+// 文本条目继续用上面的 JSON 信封;大文件走这套裸字节帧。
 const BLOB_MAGIC = new Uint8Array([0x4b, 0x53, 0x46, 0x31]); // "KSF1"
-const BLOB_VER = 1;
 const BLOB_HEADER_LEN = 4 + 1 + 12; // = 17
 
-/** 原始字节 → 加密 → 二进制信封字节(存上网盘的文件 artifact 格式)。 */
-export async function encryptBytesToBlob(key: CryptoKey, data: Uint8Array): Promise<Uint8Array> {
-  const { iv, ct } = await encrypt(key, data);
+/** 原始字节 → 加密 → 二进制信封字节。传 aad 时绑定上下文(ver=2)。 */
+export async function encryptBytesToBlob(
+  key: CryptoKey,
+  data: Uint8Array,
+  aad?: string,
+): Promise<Uint8Array> {
+  const aadBytes = aad !== undefined ? enc.encode(aad) : undefined;
+  const { iv, ct } = await encrypt(key, data, aadBytes);
   const out = new Uint8Array(BLOB_HEADER_LEN + ct.byteLength);
   out.set(BLOB_MAGIC, 0);
-  out[4] = BLOB_VER;
+  out[4] = aadBytes ? 2 : 1;
   out.set(iv, 5);
   out.set(ct, BLOB_HEADER_LEN);
   return out;
 }
 
-/** 二进制信封字节 → 解密 → 原始字节。 */
-export async function decryptBytesFromBlob(key: CryptoKey, blob: Uint8Array): Promise<Uint8Array> {
+/** 二进制信封字节 → 解密 → 原始字节。ver=2 的帧需提供同一 aad。 */
+export async function decryptBytesFromBlob(
+  key: CryptoKey,
+  blob: Uint8Array,
+  aad?: string,
+): Promise<Uint8Array> {
   if (blob.byteLength < BLOB_HEADER_LEN) throw new Error("blob too short");
   for (let i = 0; i < BLOB_MAGIC.length; i++) {
     if (blob[i] !== BLOB_MAGIC[i]) throw new Error("bad blob magic");
   }
-  if (blob[4] !== BLOB_VER) throw new Error(`unsupported blob version ${blob[4]}`);
+  const ver = blob[4];
+  if (ver !== 1 && ver !== 2) throw new Error(`unsupported blob version ${ver}`);
   const iv = blob.subarray(5, BLOB_HEADER_LEN);
   const ct = blob.subarray(BLOB_HEADER_LEN);
-  return decrypt(key, iv, ct);
+  const aadBytes = ver === 2 && aad !== undefined ? enc.encode(aad) : undefined;
+  return decrypt(key, iv, ct, aadBytes);
 }
 
 /**

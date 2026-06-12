@@ -6,6 +6,7 @@ import {
 } from "@keysark/db";
 import { normalizeUserCode } from "@/lib/cli-auth";
 import { getConnectedStorage } from "@/lib/storage";
+import { enforceRateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -13,6 +14,10 @@ export const runtime = "nodejs";
 // 批准即把 CLI 绑定到当前登录的存储账号。完成后跳回 /cli-auth 展示结果。
 // CSRF:会话 cookie 均为 SameSite=Lax,跨站表单 POST 不携带 → 天然拒绝。
 export async function POST(request: Request) {
+  // 防暴力枚举 user_code:每 IP 每分钟最多 30 次确认/拒绝。
+  const limited = enforceRateLimit(request, { bucket: "cli-approve", limit: 30, windowMs: 60_000 });
+  if (limited) return limited;
+
   const form = await request.formData();
   const code = normalizeUserCode(String(form.get("code") ?? ""));
   const action = String(form.get("action") ?? "");

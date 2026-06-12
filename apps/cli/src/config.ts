@@ -1,8 +1,14 @@
-// 云端连接信息:~/.keysark/cloud.json(`ark login` 设备码授权写出 { token, provider };
-// 不存 server)。server 一律按 --server / KEYSARK_SERVER / 内置默认解析。
+// 云端连接信息:~/.keysark/cloud.json(`ark login` 设备码授权写出 { token, provider, issuer })。
+// server 仍按 --server / KEYSARK_SERVER / 内置默认解析,但 token 绑定 issuer(颁发它的 server):
+// 解析出的 server 与 issuer 不一致时拒绝发 token,防止把令牌发往错误/恶意服务端。
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+
+/** 归一化 server URL(去尾部斜杠),用于 issuer 绑定比较。 */
+export function normalizeServer(url: string): string {
+  return url.trim().replace(/\/+$/, "");
+}
 
 // build 时由 scripts/build.mjs 经 esbuild define 注入;tsx 直跑源码未注入 → "dev"。
 declare const __KEYSARK_VERSION__: string | undefined;
@@ -28,14 +34,16 @@ export function cloudConfigPath(): string {
 export interface CloudConn {
   token: string;
   provider?: string;
+  /** 颁发该 token 的 server(归一化 URL)。token 只应发回此 issuer。 */
+  issuer?: string;
 }
 
-/** 读云端登录态(`ark login` 写出,只存 token/provider;server 由 env/flag/默认解析)。 */
+/** 读云端登录态(`ark login` 写出 token/provider/issuer;server 由 env/flag/默认解析)。 */
 export function loadCloud(): CloudConn | null {
   try {
     const cfg = JSON.parse(readFileSync(cloudConfigPath(), "utf8")) as Partial<CloudConn>;
     if (typeof cfg.token === "string" && cfg.token) {
-      return { token: cfg.token, provider: cfg.provider };
+      return { token: cfg.token, provider: cfg.provider, issuer: cfg.issuer };
     }
   } catch {
     /* 无 cloud.json */
@@ -57,15 +65,24 @@ export interface Conn {
   token: string | null;
   /** baseUrl 的来源(info / 报错提示用) */
   source: "--server" | "KEYSARK_SERVER" | "default";
+  /** 登录态里 token 绑定的 issuer(无登录态 / 旧版无 issuer 则为 null) */
+  issuer: string | null;
+  /** token 是否可用于当前 baseUrl(issuer 匹配,或旧版无 issuer 时放行) */
+  tokenUsableHere: boolean;
 }
 
-/** 解析云端连接:--server > KEYSARK_SERVER > 内置默认;token 来自登录态(与 server 解耦)。 */
+/** 解析云端连接:--server > KEYSARK_SERVER > 内置默认;token 来自登录态,且绑定 issuer。 */
 export function resolveConn(serverOverride?: string): Conn {
   const cloud = loadCloud();
-  const override = (serverOverride ?? process.env.KEYSARK_SERVER ?? "").replace(/\/+$/, "");
+  const baseUrl = normalizeServer(serverOverride ?? process.env.KEYSARK_SERVER ?? "") || defaultServer();
+  const issuer = cloud?.issuer ? normalizeServer(cloud.issuer) : null;
+  // 旧版 cloud.json 无 issuer → 放行(向后兼容);有 issuer 则必须与 baseUrl 一致。
+  const tokenUsableHere = !cloud?.token || issuer === null || issuer === baseUrl;
   return {
-    baseUrl: override || defaultServer(),
+    baseUrl,
     token: cloud?.token ?? null,
-    source: serverOverride ? "--server" : override ? "KEYSARK_SERVER" : "default",
+    source: serverOverride ? "--server" : process.env.KEYSARK_SERVER ? "KEYSARK_SERVER" : "default",
+    issuer,
+    tokenUsableHere,
   };
 }

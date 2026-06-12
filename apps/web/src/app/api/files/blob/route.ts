@@ -1,4 +1,10 @@
 import { getStorageForRequest } from "@/lib/storage";
+import {
+  PayloadTooLargeError,
+  readBodyLimited,
+  rejectIfTooLargeByHeader,
+  tooLargeResponse,
+} from "@/lib/request-limits";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -8,14 +14,23 @@ export const maxDuration = 60;
 
 // 上传/覆盖:?path= 相对路径,body 为 application/octet-stream 原始密文字节。
 export async function POST(request: Request) {
+  const tooLarge = rejectIfTooLargeByHeader(request);
+  if (tooLarge) return tooLarge;
+
   const conn = await getStorageForRequest(request);
   if (!conn) return Response.json({ error: "not_connected" }, { status: 401 });
 
   const path = (new URL(request.url).searchParams.get("path") ?? "").trim();
   if (!path) return Response.json({ error: "path_required" }, { status: 400 });
 
+  let bytes: Uint8Array;
   try {
-    const bytes = new Uint8Array(await request.arrayBuffer());
+    bytes = await readBodyLimited(request); // 流式读取 + 硬上限,不信任 Content-Length
+  } catch (err) {
+    if (err instanceof PayloadTooLargeError) return tooLargeResponse();
+    throw err;
+  }
+  try {
     await conn.client.upload(path, bytes);
     return Response.json({ ok: true });
   } catch (err) {

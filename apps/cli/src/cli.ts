@@ -7,7 +7,7 @@ import { basename, join, resolve } from "node:path";
 import { checkVerifier, deriveKey, sha256Hex, validateMnemonic } from "@keysark/crypto";
 import { b64decode } from "@keysark/vault";
 import type { EntryMeta, StorageTransport, Vault, VaultDescriptor } from "@keysark/vault";
-import { cliVersion, clearCloud, defaultServer, keysarkDir, loadCloud, resolveConn, saveCloud } from "./config";
+import { cliVersion, clearCloud, defaultServer, keysarkDir, loadCloud, normalizeServer, resolveConn, saveCloud } from "./config";
 import { httpTransport } from "./transport";
 import {
   acquireMnemonic,
@@ -73,6 +73,13 @@ async function readStdin(): Promise<string> {
 function transportFrom(args: Args): StorageTransport {
   const conn = resolveConn(flagStr(args.flags, "server"));
   if (!conn.token) fail(`Not logged in to ${conn.baseUrl}. Run \`ark login\`.`);
+  // token 绑定 issuer:不把它发往别的 server(防发到错误/恶意服务端)。
+  if (!conn.tokenUsableHere) {
+    fail(
+      `Token was issued for ${conn.issuer}, not ${conn.baseUrl}. ` +
+        `Re-run \`ark login\` for ${conn.baseUrl}, or target the original server.`,
+    );
+  }
   return httpTransport(conn.baseUrl, conn.token!);
 }
 
@@ -296,7 +303,14 @@ async function main() {
       }[conn.source];
       console.log(`${dim("Version:")} ${cliVersion()}`);
       console.log(`${dim("Server:")} ${conn.baseUrl} ${dim(`(${sourceLabel})`)}`);
-      console.log(cloud ? `Login: ${OK} ${dim(`(${cloud.provider ?? "?"})`)}` : `Login: ${ERR} ${dim("(run `ark login`)")}`);
+      if (cloud) {
+        const bind = conn.tokenUsableHere
+          ? dim(`(${cloud.provider ?? "?"}${conn.issuer ? `, issued by ${conn.issuer}` : ""})`)
+          : yellow(`(issued by ${conn.issuer}; not usable for ${conn.baseUrl} — re-login)`);
+        console.log(`Login: ${OK} ${bind}`);
+      } else {
+        console.log(`Login: ${ERR} ${dim("(run `ark login`)")}`);
+      }
       console.log(`${dim("Config dir:")} ${keysarkDir()}`);
       return;
     }
@@ -361,7 +375,7 @@ async function main() {
           continue;
         }
         if (pd.status === "approved" && pd.token) {
-          saveCloud({ token: pd.token, provider: pd.provider });
+          saveCloud({ token: pd.token, provider: pd.provider, issuer: server });
           stop(`${OK} Logged in: ${server} ${dim(`(${pd.provider ?? "?"})`)}`);
           if (!hasCredential()) console.log(dim("  Next: ark import"));
           return;
@@ -384,20 +398,22 @@ async function main() {
       // 先清本机状态(绝不被网络问题阻塞);远端令牌随后 best-effort 吊销并如实报告。
       clearCloud();
       console.log(`${OK} Logged out locally.`);
+      // 吊销目标用 token 的 issuer(签发它的 server 才认得它);旧版无 issuer 则回退解析出的 server。
       const conn = resolveConn(flagStr(args.flags, "server"));
+      const revokeAt = cloud.issuer ? normalizeServer(cloud.issuer) : conn.baseUrl;
       try {
-        const res = await fetch(`${conn.baseUrl}/api/cli/token`, {
+        const res = await fetch(`${revokeAt}/api/cli/token`, {
           method: "DELETE",
           headers: { "x-keysark-token": cloud.token },
           signal: AbortSignal.timeout(5000),
         });
         console.log(
           res.ok
-            ? `${OK} Token revoked at ${conn.baseUrl}.`
-            : dim(`Token not revoked at ${conn.baseUrl} (HTTP ${res.status}); it will expire on its own.`),
+            ? `${OK} Token revoked at ${revokeAt}.`
+            : dim(`Token not revoked at ${revokeAt} (HTTP ${res.status}); it will expire on its own.`),
         );
       } catch {
-        console.log(dim(`Could not reach ${conn.baseUrl}; token not revoked (will expire on its own).`));
+        console.log(dim(`Could not reach ${revokeAt}; token not revoked (will expire on its own).`));
       }
       if (hasCredential()) console.log(dim("  Mnemonic credential kept; run `ark forget` to remove."));
       return;

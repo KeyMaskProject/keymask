@@ -18,6 +18,11 @@ export {
   createCliToken,
   getCliTokenByHash,
   revokeCliTokenByHash,
+  revokeCliTokenById,
+  listCliTokensByAccount,
+  CLI_TOKEN_TTL_MS,
   type CliAuthRequestRecord,
   type CliTokenRecord,
+  type CliTokenListItem,
 } from "./cli-auth";
+export { dbEncryptionEnabled } from "./secret-box";
