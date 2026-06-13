@@ -230,14 +230,21 @@ export {
   type StrengthReason,
 } from "./password-strength";
 
-/** 口令校验块:加密已知标记。解锁时解密比对,判断助记词是否正确。 */
-export async function makeVerifier(key: CryptoKey): Promise<Uint8Array> {
-  return encryptToEnvelope(key, VERIFIER_MARKER);
+/** 口令校验块:加密已知标记。解锁时解密比对,判断助记词是否正确。
+ *  传 aad(如 vault id|dir)→ 绑定上下文(v2):描述符被恶意存储后端改 dir / 掉包时,
+ *  重建的 AAD 与创建时不符 → 校验失败,从而检出篡改。
+ *  旧 v1 校验块无 AAD,传入 aad 会被 decryptFromEnvelope 忽略(向后兼容)。 */
+export async function makeVerifier(key: CryptoKey, aad?: string): Promise<Uint8Array> {
+  return encryptToEnvelope(key, VERIFIER_MARKER, aad);
 }
 
-export async function checkVerifier(key: CryptoKey, verifierBytes: Uint8Array): Promise<boolean> {
+export async function checkVerifier(
+  key: CryptoKey,
+  verifierBytes: Uint8Array,
+  aad?: string,
+): Promise<boolean> {
   try {
-    return (await decryptFromEnvelope(key, verifierBytes)) === VERIFIER_MARKER;
+    return (await decryptFromEnvelope(key, verifierBytes, aad)) === VERIFIER_MARKER;
   } catch {
     return false;
   }

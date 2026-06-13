@@ -11,6 +11,7 @@ export {
   LEGACY_META_NAME,
   LEGACY_VAULT_ID,
   vaultDir,
+  vaultVerifierAad,
   b64encode,
   b64decode,
   type VaultDescriptor,

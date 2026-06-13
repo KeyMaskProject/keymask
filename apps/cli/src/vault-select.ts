@@ -10,6 +10,7 @@ import {
   b64encode,
   makeCache,
   memoryKv,
+  vaultVerifierAad,
   type StorageTransport,
   type VaultDescriptor,
 } from "@keysark/vault";
@@ -43,7 +44,7 @@ export async function pickVault(
     ? vaults.filter((v) => v.id === vaultSel || v.label === vaultSel)
     : vaults;
   for (const v of candidates) {
-    if (await checkVerifier(key, b64decode(v.verifier))) return v;
+    if (await checkVerifier(key, b64decode(v.verifier), vaultVerifierAad(v.id, v.dir))) return v;
   }
   return null;
 }

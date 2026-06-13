@@ -102,6 +102,7 @@ import {
   b64encode,
   saveRegistry,
   vaultDir,
+  vaultVerifierAad,
   type Registry,
   type VaultDescriptor,
 } from "@/lib/registry";
@@ -507,7 +508,8 @@ export function VaultPanel({
     try {
       const k = await deriveKey(m);
       const verifierBytes = b64decode(selectedVault.verifier);
-      if (!(await checkVerifier(k, verifierBytes))) {
+      const aad = vaultVerifierAad(selectedVault.id, selectedVault.dir);
+      if (!(await checkVerifier(k, verifierBytes, aad))) {
         setStatus(t("st_mismatch"));
         return;
       }
@@ -539,8 +541,9 @@ export function VaultPanel({
         return;
       }
       const k = await deriveKey(mnemonic);
-      if (!(await checkVerifier(k, b64decode(v.verifier)))) {
-        // 凭据里的助记词与当前库校验块不符(库被重建等)→ 清掉失效凭据,回助记词流程。
+      if (!(await checkVerifier(k, b64decode(v.verifier), vaultVerifierAad(v.id, v.dir)))) {
+        // 校验失败:助记词与该库校验块不符(库被重建),或描述符被存储后端篡改(dir/掉包,
+        // AAD 不匹配)→ 清掉失效凭据,回助记词流程。
         await clearCredential(v.id);
         setCredExists(false);
         setStatus(t("st_mismatch"));
@@ -648,14 +651,16 @@ export function VaultPanel({
     setStatus(t("st_creating"));
     try {
       const k = await deriveKey(newMnemonic);
-      const verifier = await makeVerifier(k);
       const id = newId();
+      const dir = vaultDir(id);
+      // verifier 绑定 (id, dir):解锁时按描述符当前值重建 AAD,检出存储后端篡改 dir/掉包。
+      const verifier = await makeVerifier(k, vaultVerifierAad(id, dir));
       // 第一个保险库无需取名,默认为 "default";后续保险库用用户输入的名字。
       const label = vaults.length === 0 ? "default" : newLabel.trim();
       const descriptor: VaultDescriptor = {
         id,
         label,
-        dir: vaultDir(id),
+        dir,
         verifier: b64encode(verifier),
         createdAt: Date.now(),
       };

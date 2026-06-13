@@ -96,6 +96,12 @@ export function vaultDir(id: string): string {
   return `vaults/${id}`;
 }
 
+/** verifier 的 AAD 上下文:把校验块绑定到 (vault id, dir)。解锁时按描述符当前值重建,
+ *  存储后端改了 dir 或掉包描述符 → AAD 不符 → checkVerifier 失败,从而检出篡改。 */
+export function vaultVerifierAad(id: string, dir: string): string {
+  return `ksv1|vault|${id}|${dir}`;
+}
+
 // ---------- base64(纯实现,浏览器/Node 通用,依赖全局 btoa/atob) ----------
 export function b64encode(u: Uint8Array): string {
   let s = "";

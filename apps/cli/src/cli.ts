@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { checkVerifier, deriveKey, sha256Hex, validateMnemonic } from "@keysark/crypto";
-import { b64decode } from "@keysark/vault";
+import { b64decode, vaultVerifierAad } from "@keysark/vault";
 import type { EntryMeta, StorageTransport, Vault, VaultDescriptor } from "@keysark/vault";
 import { openLocalSource } from "./local";
 import { renderVaultHtml, type ExportData, type ExportItem } from "./export-html";
@@ -441,7 +441,7 @@ async function main() {
       if (vaults.length === 0) fail("No vaults found. Create one on the web first.");
       const matches: VaultDescriptor[] = [];
       for (const v of vaults) {
-        if (await checkVerifier(key, b64decode(v.verifier))) matches.push(v);
+        if (await checkVerifier(key, b64decode(v.verifier), vaultVerifierAad(v.id, v.dir))) matches.push(v);
       }
       if (matches.length === 0) fail("Mnemonic does not match any vault.");
 
@@ -606,7 +606,7 @@ async function main() {
         return;
       }
       for (const v of vaults) {
-        const ok = await checkVerifier(key, b64decode(v.verifier));
+        const ok = await checkVerifier(key, b64decode(v.verifier), vaultVerifierAad(v.id, v.dir));
         console.log(`${ok ? green("●") : dim("○")} ${v.label || "(default)"}  ${cyan(`[${v.id.slice(0, 8)}]`)}  ${dim(`dir=${v.dir || "/"}`)}`);
       }
       return;

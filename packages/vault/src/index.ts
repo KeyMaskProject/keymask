@@ -8,6 +8,7 @@ export {
   itemRelPath,
   itemBlobRelPath,
   vaultDir,
+  vaultVerifierAad,
   b64encode,
   b64decode,
   type FolderMeta,
