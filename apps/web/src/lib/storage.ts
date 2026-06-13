@@ -142,3 +142,31 @@ export async function getStorageForRequest(request: Request): Promise<ConnectedS
   if (byCookie) return byCookie;
   return getConnectedStorageByCliToken(request);
 }
+
+/** 归一化沙盒内相对路径:拒绝绝对路径、空段、`.`/`..`(防越界)。非法返回 null。 */
+export function sanitizeRelPath(p: string | null): string | null {
+  const t = (p ?? "").trim();
+  if (!t || t.startsWith("/")) return null;
+  const segs = t.split("/");
+  if (segs.some((s) => s === "" || s === "." || s === "..")) return null;
+  return t;
+}
+
+/**
+ * 按沙盒相对路径下载:服务端在受信 app 根内 list 父目录、按文件名解析出 provider fileId,
+ * 再下载。绝不接受客户端直接给的裸 fileId —— 杜绝代取账号内任意可访问文件。
+ */
+export async function downloadByPath(
+  conn: ConnectedStorage,
+  rawPath: string | null,
+): Promise<{ status: "ok"; bytes: Uint8Array } | { status: "bad_path" } | { status: "not_found" }> {
+  const safe = sanitizeRelPath(rawPath);
+  if (!safe) return { status: "bad_path" };
+  const slash = safe.lastIndexOf("/");
+  const dir = slash >= 0 ? safe.slice(0, slash) : "";
+  const base = slash >= 0 ? safe.slice(slash + 1) : safe;
+  const files = await conn.client.list(dir);
+  const f = files.find((x) => x.name === base);
+  if (!f) return { status: "not_found" };
+  return { status: "ok", bytes: await conn.client.download(f.id) };
+}

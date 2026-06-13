@@ -7,6 +7,12 @@ import {
 import { normalizeUserCode } from "@/lib/cli-auth";
 import { getConnectedStorage } from "@/lib/storage";
 import { enforceRateLimit } from "@/lib/rate-limit";
+import {
+  MAX_CONTROL_BODY_BYTES,
+  PayloadTooLargeError,
+  readBodyLimited,
+  tooLargeResponse,
+} from "@/lib/request-limits";
 
 export const runtime = "nodejs";
 
@@ -18,9 +24,18 @@ export async function POST(request: Request) {
   const limited = enforceRateLimit(request, { bucket: "cli-approve", limit: 30, windowMs: 60_000 });
   if (limited) return limited;
 
-  const form = await request.formData();
-  const code = normalizeUserCode(String(form.get("code") ?? ""));
-  const action = String(form.get("action") ?? "");
+  // 表单为 application/x-www-form-urlencoded(cli-auth 页);读 body 设小上限后手动解析,
+  // 避免 formData() 对超大 body 无限缓冲。
+  let form: URLSearchParams;
+  try {
+    const raw = await readBodyLimited(request, MAX_CONTROL_BODY_BYTES);
+    form = new URLSearchParams(new TextDecoder().decode(raw));
+  } catch (err) {
+    if (err instanceof PayloadTooLargeError) return tooLargeResponse();
+    form = new URLSearchParams();
+  }
+  const code = normalizeUserCode(form.get("code") ?? "");
+  const action = form.get("action") ?? "";
   const url = new URL(request.url);
   const back = (result: string) =>
     NextResponse.redirect(

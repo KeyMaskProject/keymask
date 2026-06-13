@@ -31,8 +31,8 @@ export const browserTransport: StorageTransport = {
     const data = (await res.json()) as { ok?: boolean; message?: string };
     if (!res.ok || !data.ok) throw new Error(data.message ?? `HTTP ${res.status}`);
   },
-  async download(fileId) {
-    const res = await fetch(`/api/files/blob?fileId=${encodeURIComponent(fileId)}`);
+  async download(relPath) {
+    const res = await fetch(`/api/files/blob?path=${encodeURIComponent(relPath)}`);
     if (!res.ok) throw new Error(`download HTTP ${res.status}`);
     return new Uint8Array(await res.arrayBuffer());
   },

@@ -116,8 +116,8 @@ export interface StorageTransport {
   list(dir: string): Promise<Map<string, { id: string; size: number }>>;
   /** 上传/覆盖文件到相对路径。 */
   upload(path: string, bytes: Uint8Array): Promise<void>;
-  /** 按文件 id 下载原始字节。 */
-  download(fileId: string): Promise<Uint8Array>;
+  /** 按沙盒内相对路径下载原始字节(服务端在受信 app 根内解析为 provider fileId,不接受裸 fileId)。 */
+  download(relPath: string): Promise<Uint8Array>;
   /** 删除相对路径的文件;不存在应幂等不报错。 */
   delete(path: string): Promise<void>;
 }

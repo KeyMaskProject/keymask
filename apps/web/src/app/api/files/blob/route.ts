@@ -1,4 +1,4 @@
-import { getStorageForRequest } from "@/lib/storage";
+import { downloadByPath, getStorageForRequest } from "@/lib/storage";
 import {
   PayloadTooLargeError,
   readBodyLimited,
@@ -39,20 +39,20 @@ export async function POST(request: Request) {
   }
 }
 
-// 下载:?fileId= 文件 id,直接以 octet-stream 返回原始密文字节(非 JSON 包 base64)。
+// 下载:?path= 沙盒相对路径(服务端在 app 根内解析为 fileId);octet-stream 返回原始密文字节。
 export async function GET(request: Request) {
   const conn = await getStorageForRequest(request);
   if (!conn) return Response.json({ error: "not_connected" }, { status: 401 });
 
-  const fileId = new URL(request.url).searchParams.get("fileId");
-  if (!fileId) return Response.json({ error: "fileId_required" }, { status: 400 });
-
+  const path = new URL(request.url).searchParams.get("path");
   try {
-    const bytes = await conn.client.download(fileId);
-    return new Response(bytes as unknown as BodyInit, {
+    const r = await downloadByPath(conn, path);
+    if (r.status === "bad_path") return Response.json({ error: "path_required" }, { status: 400 });
+    if (r.status === "not_found") return Response.json({ error: "not_found" }, { status: 404 });
+    return new Response(r.bytes as unknown as BodyInit, {
       headers: {
         "Content-Type": "application/octet-stream",
-        "Content-Length": String(bytes.byteLength),
+        "Content-Length": String(r.bytes.byteLength),
       },
     });
   } catch (err) {

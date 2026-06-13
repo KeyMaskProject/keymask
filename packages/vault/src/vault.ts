@@ -179,7 +179,7 @@ export class Vault {
       this.fileMap = await this.transport.list(this.dir);
       const idxFile = this.fileMap.get(INDEX_NAME);
       if (idxFile) {
-        const bytes = await this.transport.download(idxFile.id);
+        const bytes = await this.transport.download(this.indexPath());
         const remote = normalizeIndex(await decJson<unknown>(this.key, bytes, this.idxAad()));
         await this.assertNoRollback(remote);
         this.index = remote;
@@ -234,7 +234,7 @@ export class Vault {
     const versMap = await this.transport.list(this.versionsDir(id));
     const f = versMap.get(`${meta.updatedAt}.json`);
     if (!f) throw new Error("entry version not found on netdisk");
-    const bytes = await this.transport.download(f.id);
+    const bytes = await this.transport.download(this.versionPath(id, meta.updatedAt));
     const doc = this.verifyDoc(await decJson<EntryDoc>(this.key, bytes, aad), id);
     this.cache.setEntry(id, b64encode(bytes), false);
     return doc;
@@ -387,18 +387,26 @@ export class Vault {
       contentHash,
       versions,
     };
+
+    // 顺序提交:blob → (元信息 + index)。
+    // blob 不进本地缓存(可达 100MB,会爆 localStorage 配额),失败便无法重试 → 必须先确认 blob 落盘
+    // 成功,才把指向它的元信息/index 落本地缓存与网盘。否则 index 会指向缺失的 blob 且无从恢复。
+    try {
+      await this.transport.upload(this.blobVersionPath(id, now), blob);
+    } catch (err) {
+      // blob 上传失败:不改 index、不缓存,旧版本(若有)保持完整。本次保存整体失败。
+      return { id, entries: this.entries, synced: false, syncError: String(err) };
+    }
+
+    // blob 已落盘 → 提交元信息与 index。两者都进缓存(小),即便上传失败也能由 sync() 重推恢复。
     if (existing) Object.assign(existing, meta);
     else this.index.entries.push(meta);
     this.bumpRev();
     const indexEnvelope = await encJson(this.key, this.index, this.idxAad());
-
-    // 本地优先:元信息信封进缓存(标 pending);文件 blob 不进 localStorage(可达 100MB,会爆配额)。
     this.cache.setEntry(id, b64encode(entryEnvelope), true);
     this.cache.setIndex(b64encode(indexEnvelope), true);
 
-    // 同步网盘:写新版本的 blob + 元信息 + index,并行上传(往返数与无版本时相同:3 PUT)。
     const results = await Promise.allSettled([
-      this.transport.upload(this.blobVersionPath(id, now), blob),
       this.transport
         .upload(this.versionPath(id, now), entryEnvelope)
         .then(() => this.cache.clearPending(id)),
@@ -420,7 +428,7 @@ export class Vault {
     const versMap = await this.transport.list(this.versionsDir(id));
     const f = versMap.get(`${meta.updatedAt}.bin`);
     if (!f) throw new Error("file blob not found on netdisk");
-    const blob = await this.transport.download(f.id);
+    const blob = await this.transport.download(this.blobVersionPath(id, meta.updatedAt));
     return decryptBytesFromBlob(this.key, blob, this.blobAad(id, meta.updatedAt));
   }
 
@@ -455,7 +463,7 @@ export class Vault {
     const map = await this.transport.list(this.versionsDir(id));
     const f = map.get(`${ts}.json`);
     if (!f) throw new Error("version not found on netdisk");
-    const bytes = await this.transport.download(f.id);
+    const bytes = await this.transport.download(this.versionPath(id, ts));
     return this.verifyDoc(await decJson<EntryDoc>(this.key, bytes, this.docAad(id, ts)), id);
   }
 
@@ -464,7 +472,7 @@ export class Vault {
     const map = await this.transport.list(this.versionsDir(id));
     const f = map.get(`${ts}.bin`);
     if (!f) throw new Error("file version not found on netdisk");
-    const blob = await this.transport.download(f.id);
+    const blob = await this.transport.download(this.blobVersionPath(id, ts));
     return decryptBytesFromBlob(this.key, blob, this.blobAad(id, ts));
   }
 

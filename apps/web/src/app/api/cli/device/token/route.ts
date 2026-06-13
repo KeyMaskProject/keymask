@@ -6,6 +6,12 @@ import {
 } from "@keysark/db";
 import { generateCliToken, sha256Hex } from "@/lib/cli-auth";
 import { enforceRateLimit } from "@/lib/rate-limit";
+import {
+  MAX_CONTROL_BODY_BYTES,
+  PayloadTooLargeError,
+  readBodyLimited,
+  tooLargeResponse,
+} from "@/lib/request-limits";
 
 export const runtime = "nodejs";
 
@@ -18,10 +24,12 @@ export async function POST(request: Request) {
 
   let deviceCode = "";
   try {
-    const body = (await request.json()) as { device_code?: string };
+    const raw = await readBodyLimited(request, MAX_CONTROL_BODY_BYTES);
+    const body = JSON.parse(new TextDecoder().decode(raw)) as { device_code?: string };
     deviceCode = (body.device_code ?? "").trim();
-  } catch {
-    /* fallthrough → 400 */
+  } catch (err) {
+    if (err instanceof PayloadTooLargeError) return tooLargeResponse();
+    /* JSON 解析失败 → 落到下面 400 */
   }
   if (!deviceCode) return NextResponse.json({ error: "device_code_required" }, { status: 400 });
 

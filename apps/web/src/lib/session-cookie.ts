@@ -1,8 +1,9 @@
 // 签名会话 cookie:把账号标识(Google sub / 百度 uk)用 HMAC-SHA256 签名 + 内嵌过期,
 // 防止伪造「任意账号 ID」当 bearer 用。值本身不机密(只是账号标识),签名保证完整性与不可伪造。
 //
-// 主密钥来自 KEYSARK_SESSION_SECRET(任意高熵字符串)。生产必须配置;未配置时
-// 退化为「进程内随机密钥 + 告警」,使开发可用、但重启即失效、多实例互不认(逼迫生产配置)。
+// 主密钥来自 KEYSARK_SESSION_SECRET(≥16 字符的高熵字符串)。
+//   - 生产缺失/过短 → 启动即抛错(fail closed),不接受不可验证的会话。
+//   - 开发缺失 → 进程内随机密钥 + 告警(重启即失效、多实例互不认,逼迫生产配置)。
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 const ENV_SECRET = "KEYSARK_SESSION_SECRET";
@@ -15,9 +16,14 @@ function secret(): Buffer {
   if (raw && raw.length >= 16) {
     _secret = Buffer.from(raw, "utf8");
   } else {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        `${ENV_SECRET} (>= 16 chars) is required in production. Generate one with: openssl rand -base64 32`,
+      );
+    }
     if (!_warned) {
       console.warn(
-        `[session] ${ENV_SECRET} not set (or too short); using an ephemeral per-process key. ` +
+        `[session] ${ENV_SECRET} not set (or too short); using an ephemeral per-process key (dev only). ` +
           "Set it in production or sessions break across restarts/instances.",
       );
       _warned = true;

@@ -43,9 +43,9 @@ export function httpTransport(baseUrl: string, token: string | null): StorageTra
       const data = (await jsonOrThrow(res, "upload")) as { ok?: boolean };
       if (!data.ok) throw new Error("upload failed: not confirmed by server");
     },
-    async download(fileId) {
+    async download(relPath) {
       const res = await fetch(
-        `${baseUrl}/api/files/content?fileId=${encodeURIComponent(fileId)}`,
+        `${baseUrl}/api/files/content?path=${encodeURIComponent(relPath)}`,
         { headers },
       );
       const data = (await jsonOrThrow(res, "download")) as { contentB64: string };

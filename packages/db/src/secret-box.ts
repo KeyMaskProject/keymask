@@ -2,8 +2,9 @@
 // 加密存储:DB 泄露也拿不到可用 token。主密钥来自环境变量 KEYSARK_DB_ENCRYPTION_KEY
 // (base64 编码的 32 字节),建议由 KMS/密钥管理注入。
 //
-// 兼容策略:
-//   - 未设主密钥 → 明文存储(开发态),与历史行为一致;读取明文直接返回。
+// 兼容/安全策略:
+//   - 生产(NODE_ENV=production)缺主密钥 → 启动即抛错(fail closed),绝不静默退回明文。
+//   - 开发缺主密钥 → 明文存储(与历史行为一致),仅告警一次。
 //   - 设了主密钥 → 写入加密为 "enc:v1:<base64(iv|tag|ct)>";读取时按前缀分流,
 //     历史明文行原样返回(下次写入即自动升级为密文)。
 import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
@@ -12,12 +13,29 @@ const PREFIX = "enc:v1:";
 const ENV_KEY = "KEYSARK_DB_ENCRYPTION_KEY";
 
 let _key: Buffer | null | undefined;
+let _warned = false;
 
-/** 解析主密钥;未配置返回 null(明文模式)。配置非法(长度≠32B)直接抛错,避免静默弱化。 */
+/**
+ * 解析主密钥。配置非法(长度≠32B)直接抛错。未配置时:
+ *   - 生产抛错(fail closed);开发返回 null(明文模式,告警一次)。
+ */
 function masterKey(): Buffer | null {
   if (_key !== undefined) return _key;
   const raw = process.env[ENV_KEY];
   if (!raw) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error(
+        `${ENV_KEY} is required in production (refusing to store OAuth tokens in plaintext). ` +
+          `Generate one with: openssl rand -base64 32`,
+      );
+    }
+    if (!_warned) {
+      console.warn(
+        `[secret-box] ${ENV_KEY} not set; OAuth tokens stored in PLAINTEXT (dev only). ` +
+          "Set it (base64 of 32 bytes) before production.",
+      );
+      _warned = true;
+    }
     _key = null;
     return null;
   }

@@ -5,6 +5,9 @@ import { NextResponse } from "next/server";
 /** 请求体硬上限:150MB。覆盖 100MB 明文 + base64(~1.33x)/信封开销。 */
 export const MAX_UPLOAD_BYTES = 150 * 1024 * 1024;
 
+/** 控制类小请求(CLI 授权码/确认表单等)的 body 上限:16KB,远超合法负载。 */
+export const MAX_CONTROL_BODY_BYTES = 16 * 1024;
+
 /** 用 Content-Length 头早拒(行为良好的客户端无需读 body)。超限返回 413,否则 null。 */
 export function rejectIfTooLargeByHeader(request: Request, max = MAX_UPLOAD_BYTES): NextResponse | null {
   const len = Number(request.headers.get("content-length") ?? "");

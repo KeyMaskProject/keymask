@@ -21,13 +21,13 @@ export async function fetchVaults(transport: StorageTransport): Promise<VaultDes
   const root = await transport.list("");
   const reg = root.get(REGISTRY_NAME);
   if (reg) {
-    const bytes = await transport.download(reg.id);
+    const bytes = await transport.download(REGISTRY_NAME);
     const parsed = JSON.parse(decoder.decode(bytes)) as { vaults?: VaultDescriptor[] };
     return Array.isArray(parsed.vaults) ? parsed.vaults : [];
   }
   const legacy = root.get(LEGACY_META_NAME);
   if (legacy) {
-    const bytes = await transport.download(legacy.id);
+    const bytes = await transport.download(LEGACY_META_NAME);
     return [{ id: LEGACY_VAULT_ID, label: "", dir: "", verifier: b64encode(bytes), createdAt: 0 }];
   }
   return [];
