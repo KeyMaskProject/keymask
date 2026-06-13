@@ -28,13 +28,19 @@ interface Backend {
   remove(): void;
 }
 
-/** execFileSync 包装:ENOENT(工具缺失)→ KeystoreUnavailable;其它非零退出 → 原样抛。 */
-function run(cmd: string, args: string[], opts: { input?: Buffer; env?: NodeJS.ProcessEnv } = {}): Buffer {
+/** execFileSync 包装:ENOENT(工具缺失)→ KeystoreUnavailable;其它非零退出 → 原样抛。
+ *  silent=true:连 stdout 也丢弃(写入类命令不读输出),彻底挡住 `security` 的
+ *  "password data for new item" 交互提示等冒到终端。 */
+function run(
+  cmd: string,
+  args: string[],
+  opts: { input?: Buffer; env?: NodeJS.ProcessEnv; silent?: boolean } = {},
+): Buffer {
   try {
     return execFileSync(cmd, args, {
       input: opts.input,
       env: opts.env ?? process.env,
-      stdio: ["pipe", "pipe", "ignore"], // 吞掉 stderr,避免污染输出
+      stdio: ["pipe", opts.silent ? "ignore" : "pipe", "ignore"],
     });
   } catch (e) {
     if ((e as NodeJS.ErrnoException).code === "ENOENT") throw new KeystoreUnavailable(cmd);
@@ -62,6 +68,7 @@ function macKeychain(account: string): Backend {
       // 值不含换行(base64 / 十进制),故 "v\nv\n" 解析无歧义。
       run("security", ["add-generic-password", "-U", "-s", SERVICE, "-a", account, "-w"], {
         input: Buffer.from(`${value}\n${value}\n`, "utf8"),
+        silent: true, // 丢弃 security 的交互提示输出,不冒到终端
       });
       // security 即便「两次不一致」也返回 0(什么都没存),故写后回读校验。
       if (self.get() !== value) throw new KeystoreUnavailable("keychain write unverified");
@@ -95,6 +102,7 @@ function linuxSecretService(account: string): Backend {
       // secret-tool store 从 stdin 读 secret(非 TTY 时不回显提示)。
       run("secret-tool", ["store", `--label=keysark ${account}`, "service", SERVICE, "account", account], {
         input: Buffer.from(value, "utf8"),
+        silent: true,
       });
     },
     remove() {
