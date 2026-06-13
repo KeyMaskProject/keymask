@@ -1052,17 +1052,40 @@ export function VaultPanel({
     await runFolderOp(() => vaultRef.current!.deleteFolder(f.id));
   }
 
-  // 锁定:清内存密钥 + 清工作台状态,回到选择/解锁界面。本机加密凭据保留,
-  // 重新解锁只需输密码(主密钥仅内存,F5/关标签同样需要重输)。
+  // 锁定:清内存密钥 + 清工作台状态 + 清所有 secret state,回到选择/解锁界面。
+  // 本机加密凭据保留,重新解锁只需输密码(主密钥仅内存,F5/关标签同样需要重输)。
   function lock() {
     vaultRef.current = null;
+    // 工作台状态
     setContent("");
     setTitle("");
     setEntries([]);
     setFolders([]);
     setSelectedId(null);
     setDraftId(null);
-    goPick();
+    setRevealed(false); // 重新解锁后预览默认仍遮住
+    // 清空所有密码 / 助记词 / 备份密码相关 state,并关闭可能开着的弹窗 ——
+    // 否则锁定后这些 secret 仍留在组件内存里。
+    setPasswordInput("");
+    setPwError(null);
+    setPhraseFallback(false);
+    setSetup(null); // {主密钥, 助记词}——最关键
+    setNewPw("");
+    setNewPw2("");
+    setShowChangePw(false);
+    setCurPw("");
+    setChPw("");
+    setChPw2("");
+    setChError(null);
+    setNewMnemonic(null); // 新建流程里生成的助记词
+    setNewLabel("");
+    setDownloaded(false);
+    setConfirming(false);
+    setChallengeInput({}); // 抄写校验里用户敲入的助记词词
+    setShowHtmlExport(false);
+    setBkPw("");
+    setBkPw2("");
+    goPick(); // 另清 mnemonicInput / status,并切回选择/解锁
   }
 
   // ============================ 选择保险库 ============================
