@@ -85,27 +85,26 @@ ark save .env             # encrypt & upload a file (target auto-detected from g
 
 The CLI mirrors the web app's security model: your mnemonic is stored locally, wrapped with an unlock password using **Argon2id** (512 MB / t=4 / p=1). Plaintext and the master key never leave your machine, and `KEYSARK_MNEMONIC` lets scripts/CI run non-interactively. Run `ark help` for the full command list (`login`, `logout`, `status`, `info`, `import`, `forget`, `vaults`, `ls`, `get`, `new`, `set`, `save`, `rm`, `sync`, `local`).
 
-### Git-native batch sync (`.keysark`)
+### Folder sync
 
-For projects, declare the secret files a repo needs in a **`.keysark`** manifest at the repo root — one repo-relative path per line. It lists *paths only, no secrets*, so it's safe to commit:
+Give a project folder in your vault a **sync list** — the secret files that repo needs, one repo-relative path per line. You set it in the web app (open the folder → **Sync settings**). The list is a *property of that folder*, stored encrypted in your vault: it's **not a file**, never goes into your code repo, and can't collide with local files.
+
+Example sync list for the `github.com/owner/repo` folder:
 
 ```
-# .keysark
 .env
 .env.production
 config/app.secret.json
 ```
 
-Then sync the whole project with no per-file arguments:
+Then sync the whole project from the repo, with no per-file arguments:
 
 ```bash
-ark save .keysark   # store the manifest in the vault (once)
-
-ark save            # encrypt & upload every file listed in .keysark
-ark get             # pull them all back (e.g. on a fresh clone)
+ark save   # encrypt & upload every file in the folder's sync list
+ark get    # pull them all back (e.g. on a fresh clone)
 ```
 
-Run inside a git repo, the target path is derived from your git origin (`github.com/owner/repo/<path>`), so individual files are terse too — `ark get github.com/owner/repo/.env` restores `.env` to its place, no second argument needed (pipes/redirects still stream to stdout). `ark save` skips unchanged files; `ark get` won't overwrite local files that differ unless you pass `--force`.
+Inside a git repo, the matching vault folder is selected from your git origin (`github.com/owner/repo`), so individual files are terse too — `ark get github.com/owner/repo/.env` restores `.env` to its place, no second argument needed (pipes/redirects still stream to stdout). `ark save` skips unchanged files; `ark get` won't overwrite local files that differ unless you pass `--force`.
 
 ### Offline / local decryption
 

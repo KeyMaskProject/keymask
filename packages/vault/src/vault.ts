@@ -626,6 +626,24 @@ export class Vault {
     return { folders: this.folders, ...res };
   }
 
+  /**
+   * 设置文件夹的同步清单(逐行去空白、去空行)。空清单 = 关闭文件夹同步(删除该字段)。
+   * 只改加密 index(无独立文件),本地优先 + 同步。
+   */
+  async setFolderSync(
+    id: string,
+    paths: string[],
+  ): Promise<{ folders: FolderMeta[]; synced: boolean; syncError?: string }> {
+    const f = this.index.folders.find((x) => x.id === id);
+    if (f) {
+      const cleaned = paths.map((p) => p.trim()).filter(Boolean);
+      if (cleaned.length) f.syncPaths = cleaned;
+      else delete f.syncPaths;
+    }
+    const res = await this.persistIndex();
+    return { folders: this.folders, ...res };
+  }
+
   /** 删除文件夹:其子文件夹与条目都上移到被删文件夹的父级(不丢数据)。 */
   async deleteFolder(id: string): Promise<{
     folders: FolderMeta[];

@@ -191,22 +191,11 @@ async function resolveEntryArg(vault: Vault, arg: string): Promise<EntryMeta> {
   fail(`Ambiguous path: ${matches.length} items match (${matches.map((m) => m.id.slice(0, 8)).join(", ")})`);
 }
 
-// ── 批量同步清单(.keysark) ───────────────────────────────────────────────────
-// 在云端 <git-origin>/.keysark(每行一个仓库内相对路径)里声明「这个项目要同步哪些文件」。
+// ── 文件夹同步(folder sync) ──────────────────────────────────────────────────
+// 在网页上为某个项目文件夹(对应仓库 git origin,如 github.com/owner/repo)配置同步清单
+//(folder.syncPaths,逐项仓库内相对路径)。它只存在加密 index 里,不落任何本地文件,故不与本地文件冲突。
 // `ark save`(无参)按清单把本地文件批量加密上传;`ark get`(无参)按清单批量拉回本地。
-// 清单只列路径、不含密钥,可安全提交进仓库;用 `ark save .keysark` 把它本身存上云端。
-const MANIFEST_NAMES = [".keysark", ".ark"];
-const MANIFEST_DOCS = "https://keysark.com/docs#batch-sync";
-
-/** 清单解析:逐行 trim,跳过空行与 `#` 注释,去掉前导 ./ 与 /。 */
-function parseManifest(content: string): string[] {
-  return content
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0 && !l.startsWith("#"))
-    .map((l) => l.replace(/^\.?\/+/, ""))
-    .filter(Boolean);
-}
+const SYNC_DOCS = "https://keysark.com/docs#folder-sync";
 
 /** 条目按「文件夹 + 标题」直接定位(与 save 的存法一致:标题可含 `/`,不拆成多级文件夹)。 */
 function entryAt(vault: Vault, folderId: string | null | undefined, title: string): EntryMeta | undefined {
@@ -214,53 +203,47 @@ function entryAt(vault: Vault, folderId: string | null | undefined, title: strin
   return vault.entries.find((e) => e.folderId === folderId && e.title === title);
 }
 
-/** 在 <origin> 文件夹下找清单条目(.keysark 优先,.ark 兼容)。 */
-function findManifestEntry(vault: Vault, originPath: string): EntryMeta | undefined {
+/** 取当前仓库 origin 对应文件夹的同步配置;未建文件夹 / 未配置清单则返回 null。 */
+function folderSync(vault: Vault, originPath: string): { folderId: string; paths: string[] } | null {
   const folderId = lookupFolderPath(vault, originPath);
-  if (folderId === undefined) return undefined;
-  for (const name of MANIFEST_NAMES) {
-    const e = entryAt(vault, folderId, name);
-    if (e) return e;
-  }
-  return undefined;
+  if (typeof folderId !== "string") return null;
+  const folder = vault.folders.find((f) => f.id === folderId);
+  const paths = (folder?.syncPaths ?? []).map((p) => p.trim()).filter(Boolean);
+  return paths.length ? { folderId, paths } : null;
 }
 
-/** 提示用户定义清单(并给出文档链接)。 */
-function manifestHint(cmd: "save" | "get", originPath: string): void {
+/** 提示:未配置文件夹同步,引导去网页配置。 */
+function syncHint(cmd: "save" | "get", originPath: string): void {
   note(
-    `No ${bold(".keysark")} found for ${bold(originPath)}.\n` +
-      `List the files to sync (one repo-relative path per line) in a ${bold(".keysark")},\n` +
-      `then run ${cyan("ark save .keysark")} to define it. After that:\n` +
-      `  ${cyan("ark save")}  ${dim("syncs all listed files up")}\n` +
+    `No folder sync configured for ${bold(originPath)} in your vault.\n` +
+      `Set it up on the web: open your vault → the ${bold(originPath)} folder → ${cyan("Sync settings")},\n` +
+      `and list the files to sync (one repo-relative path per line). After that:\n` +
+      `  ${cyan("ark save")}  ${dim("encrypts & uploads every listed file")}\n` +
       `  ${cyan("ark get")}   ${dim("pulls them all back down")}\n` +
-      `${dim(MANIFEST_DOCS)}`,
+      `${dim(SYNC_DOCS)}`,
     `ark ${cmd}`,
   );
 }
 
-/** `ark save`(无参):读云端 <origin>/.keysark,把清单里每个本地文件批量加密上传。 */
-async function runSaveManifest(args: Args): Promise<void> {
+/** `ark save`(无参):读当前仓库 origin 文件夹的同步清单,把每个本地文件批量加密上传。 */
+async function runSyncSave(args: Args): Promise<void> {
   const git = gitContext(process.cwd());
   if (!git) {
     fail(
       "Not in a git repo — specify a file to save: `ark save <source> [target]`.\n" +
-        "(Batch sync without arguments only works inside a git repo, where the project\n" +
-        " is detected from its origin to find .keysark in the vault.)",
+        "(Folder sync without arguments only works inside a git repo, whose origin\n" +
+        " selects the matching vault folder.)",
     );
   }
   const { originPath, repoRoot } = git!;
   const { vault } = await ready(args);
 
-  const manifest = findManifestEntry(vault, originPath);
-  if (!manifest) {
-    manifestHint("save", originPath);
+  const sync = folderSync(vault, originPath);
+  if (!sync) {
+    syncHint("save", originPath);
     return;
   }
-  const paths = parseManifest((await vault.open(manifest.id)).content);
-  if (paths.length === 0) {
-    console.log(yellow(".keysark is empty; nothing to sync."));
-    return;
-  }
+  const paths = sync.paths;
 
   let created = 0;
   let updated = 0;
@@ -307,14 +290,14 @@ async function runSaveManifest(args: Args): Promise<void> {
   );
 }
 
-/** `ark get`(无参):读云端 <origin>/.keysark,把清单里的条目批量拉回本地仓库对应路径。 */
-async function runGetManifest(args: Args): Promise<void> {
+/** `ark get`(无参):读当前仓库 origin 文件夹的同步清单,把条目批量拉回本地仓库对应路径。 */
+async function runSyncGet(args: Args): Promise<void> {
   const git = gitContext(process.cwd());
   if (!git) {
     fail(
       "Not in a git repo — specify a path to get: `ark get <path> [local-file]`.\n" +
-        "(Batch pull without arguments only works inside a git repo, where the project\n" +
-        " is detected from its origin to find .keysark in the vault.)",
+        "(Folder sync without arguments only works inside a git repo, whose origin\n" +
+        " selects the matching vault folder.)",
     );
   }
   const { originPath, repoRoot } = git!;
@@ -322,18 +305,13 @@ async function runGetManifest(args: Args): Promise<void> {
   // get 是敏感读取:整批只解锁一次,强制密码。
   const { vault } = await ready(args, true, true);
 
-  const manifest = findManifestEntry(vault, originPath);
-  if (!manifest) {
-    manifestHint("get", originPath);
+  const sync = folderSync(vault, originPath);
+  if (!sync) {
+    syncHint("get", originPath);
     return;
   }
-  const paths = parseManifest((await vault.open(manifest.id)).content);
-  if (paths.length === 0) {
-    console.log(yellow(".keysark is empty; nothing to pull."));
-    return;
-  }
-
-  const folderId = lookupFolderPath(vault, originPath);
+  const paths = sync.paths;
+  const folderId = sync.folderId;
   let written = 0;
   let upToDate = 0;
   let differ = 0;
@@ -524,9 +502,10 @@ Items:
                          With local: write the file — asks before overwriting a
                          different file, skips when identical; a directory keeps
                          the item's filename
-  ark get                Batch pull: inside a git repo, reads <origin>/.keysark in the
-                         vault and writes every listed file into the repo. Skips files
-                         that already match; --force overwrites ones that differ.
+  ark get                Folder sync (pull): inside a git repo, reads the matching vault
+                         folder's sync list (configured on the web) and writes every
+                         listed file into the repo. Skips files that already match;
+                         --force overwrites ones that differ.
   ark new --title T [--content C] [--folder a/b]   Create item (no --content: reads stdin)
   ark set <id> [--title T] [--content C] [--folder a/b]   Update item
                          --folder is a path; missing levels are created; "/" = root
@@ -535,10 +514,10 @@ Items:
                          (e.g. github.com/me/repo/.env) or root + filename —
                          Enter to accept, or type a custom target (q cancels).
                          Existing target → new version; identical content → skipped
-  ark save               Batch sync: inside a git repo, reads <origin>/.keysark in the
-                         vault (one repo-relative path per line) and uploads every
-                         listed file. Unchanged files are skipped. Define the manifest
-                         once with \`ark save .keysark\`.
+  ark save               Folder sync (push): inside a git repo, reads the matching vault
+                         folder's sync list (configured on the web) and uploads every
+                         listed file, encrypted. Unchanged files are skipped. Set up the
+                         sync list in your vault on the web (folder → Sync settings).
   ark rm <id>            Delete item
   ark sync               Re-push pending local changes
 
@@ -815,9 +794,9 @@ async function main() {
     case "get": {
       const pathArg = args.positionals[0];
       const localArg = args.positionals[1];
-      // 无路径 → 批量模式:按云端 <origin>/.keysark 把整个项目拉回本地。
+      // 无路径 → 文件夹同步:按当前仓库 origin 文件夹的同步清单把整个项目拉回本地。
       if (!pathArg) {
-        await runGetManifest(args);
+        await runSyncGet(args);
         return;
       }
       // get 是敏感读取:每次都强制输密码,不吃解锁缓存。
@@ -901,9 +880,9 @@ async function main() {
     case "save": {
       const fileArg = args.positionals[0];
       const targetArg = args.positionals[1];
-      // 无源文件 → 批量模式:按云端 <origin>/.keysark 同步整个项目。
+      // 无源文件 → 文件夹同步:按当前仓库 origin 文件夹的同步清单上传整个项目。
       if (!fileArg) {
-        await runSaveManifest(args);
+        await runSyncSave(args);
         return;
       }
       const abs = resolve(fileArg!);

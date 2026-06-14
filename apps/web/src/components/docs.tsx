@@ -229,14 +229,14 @@ export function Docs() {
               ))}
             </Section>
 
-            {/* 批量同步 .keysark */}
-            <Section id="batch-sync" title={t("docs_batch_title")}>
+            {/* 文件夹同步 */}
+            <Section id="folder-sync" title={t("docs_batch_title")}>
               <p className="text-[var(--color-muted-foreground)] leading-relaxed">{t("docs_batch_body")}</p>
               <CodeBlock
                 code={
-                  "# .keysark — one repo-relative path per line\n.env\n.env.production\nconfig/app.secret.json\n\n# define the manifest once, then sync the whole project:\nark save .keysark\nark save     # encrypt & upload every listed file\nark get      # pull them all back (e.g. on a fresh clone)"
+                  "# the folder's sync list (set in the web app), one path per line:\n.env\n.env.production\nconfig/app.secret.json\n\n# then, inside the repo, sync the whole project:\nark save     # encrypt & upload every listed file\nark get      # pull them all back (e.g. on a fresh clone)"
                 }
-                id="batch-sync"
+                id="folder-sync"
               />
               <p className="text-sm text-[var(--color-muted-foreground)] leading-relaxed">{t("docs_batch_note")}</p>
             </Section>

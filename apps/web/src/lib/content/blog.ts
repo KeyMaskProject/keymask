@@ -20,35 +20,35 @@ export const POSTS: BlogPost[] = [
     slug: "git-native-secret-sync",
     date: "2026-06-14",
     en: {
-      title: "Git-native secret sync: one .keysark file for the whole team",
+      title: "Git-native secret sync: one folder sync list for the whole team",
       description:
-        "Declare the secrets a repo needs in a .keysark manifest, then `ark save` / `ark get` sync them all — encrypted end-to-end, stored in your own cloud drive.",
+        "Give a project folder a sync list, then `ark save` / `ark get` sync the files it names — encrypted end-to-end, stored in your own cloud drive.",
       body: [
         {
           k: "p",
           t: "Every project has files that can't go in git: `.env`, service-account keys, signing configs. Sharing them safely — across teammates, machines, and CI — is the chore nobody enjoys. KeysArk's CLI now turns it into two commands.",
         },
-        { k: "h2", t: "Declare it once, in the repo" },
+        { k: "h2", t: "Declare it once, in your vault" },
         {
           k: "p",
-          t: "Add a `.keysark` file at the repo root listing the secret files to sync, one repo-relative path per line:",
+          t: "Open the project's folder in your vault and give it a sync list — the files that repo needs, one repo-relative path per line. It's a property of the folder, not a file in your repo:",
         },
         {
           k: "code",
-          t: "# .keysark — one repo-relative path per line\n.env\n.env.production\nconfig/app.secret.json",
+          t: "# the folder's sync list — one repo-relative path per line\n.env\n.env.production\nconfig/app.secret.json",
         },
         {
           k: "p",
-          t: "It lists paths, not secrets, so it is safe to commit. Now the whole team shares one source of truth for which files matter — and the actual contents stay gitignored.",
+          t: "The list is stored encrypted in your vault and names paths, not secrets. Because the team already shares the vault, it becomes one source of truth for which files matter — and it never lands in git, not even as a file.",
         },
         { k: "h2", t: "Push and pull, the whole project at once" },
         {
           k: "p",
-          t: "Inside the repo, `ark save` reads the manifest, encrypts every listed file in your browser-grade crypto, and uploads the ciphertext. `ark get` does the reverse:",
+          t: "Inside the repo, `ark save` reads the folder's sync list, encrypts every named file on your device, and uploads the ciphertext. `ark get` does the reverse:",
         },
         {
           k: "code",
-          t: "ark save .keysark   # define the manifest in the vault (once)\n\nark save            # encrypt & upload every listed file\nark get             # pull them all back",
+          t: "ark save   # encrypt & upload every file in the sync list\nark get    # pull them all back",
         },
         {
           k: "p",
@@ -57,45 +57,45 @@ export const POSTS: BlogPost[] = [
         { k: "h2", t: "Targets you don't have to type" },
         {
           k: "p",
-          t: "Because the vault path is derived from your git origin, a file maps to `github.com/owner/repo/<path>` automatically. So even one-offs are terse: from inside the repo, `ark get github.com/owner/repo/.env` restores `.env` to its place — no second argument needed. Pipes still work: redirect and it streams to stdout instead.",
+          t: "The matching vault folder is selected from your git origin, so a file maps to `github.com/owner/repo/<path>` automatically. Even one-offs are terse: from inside the repo, `ark get github.com/owner/repo/.env` restores `.env` to its place — no second argument needed. Pipes still work: redirect and it streams to stdout instead.",
         },
         { k: "h2", t: "Still zero-knowledge" },
         {
           k: "p",
-          t: "Nothing about this weakens the model. The manifest only names files; the contents are encrypted on your device with your recovery phrase, and the server and your cloud drive only ever see ciphertext. Convenience for developers, with the same guarantees.",
+          t: "Nothing about this weakens the model. The sync list only names files; the contents are encrypted on your device with your recovery phrase, and the server and your cloud drive only ever see ciphertext. Convenience for developers, with the same guarantees.",
         },
       ],
     },
     zh: {
-      title: "Git 原生的密钥同步:一个 .keysark 管好整个团队",
+      title: "Git 原生的密钥同步:一份文件夹同步清单,管好整个团队",
       description:
-        "在 .keysark 清单里声明项目需要的密钥文件,然后 ark save / ark get 一键同步全部——端到端加密,存进你自己的云盘。",
+        "给项目文件夹配一份同步清单,然后 ark save / ark get 就能同步清单里的文件——端到端加密,存进你自己的云盘。",
       body: [
         {
           k: "p",
           t: "每个项目都有不能进 git 的文件:`.env`、服务账号密钥、签名配置。要在队友、机器、CI 之间安全地共享它们,是谁都不爱干的杂活。KeysArk 的命令行现在把它变成两条命令。",
         },
-        { k: "h2", t: "在仓库里声明一次" },
+        { k: "h2", t: "在 vault 里声明一次" },
         {
           k: "p",
-          t: "在仓库根放一个 `.keysark`,逐行列出要同步的密钥文件(仓库内相对路径):",
+          t: "在 vault 里打开项目对应的文件夹,给它配一份同步清单——逐行写上该仓库需要的文件(仓库内相对路径)。它是文件夹的属性,而不是仓库里的一个文件:",
         },
         {
           k: "code",
-          t: "# .keysark —— 每行一个仓库内相对路径\n.env\n.env.production\nconfig/app.secret.json",
+          t: "# 文件夹的同步清单 —— 每行一个仓库内相对路径\n.env\n.env.production\nconfig/app.secret.json",
         },
         {
           k: "p",
-          t: "它只列路径、不含密钥,可以安全地提交进仓库。于是整个团队对「哪些文件要紧」有了同一份事实来源——而文件内容本身仍然 gitignore。",
+          t: "清单加密存在 vault 里,只列路径、不含密钥。因为团队本就共享同一个 vault,它自然成了「哪些文件要紧」的同一份事实来源——而且它从不进 git,连一个文件都不会落下。",
         },
         { k: "h2", t: "一键推、一键拉,整个项目" },
         {
           k: "p",
-          t: "在仓库里,`ark save` 读取清单,把每个列出的文件加密后上传密文;`ark get` 则反向拉回:",
+          t: "在仓库里,`ark save` 读取该文件夹的同步清单,把每个列出的文件在本地加密后上传密文;`ark get` 则反向拉回:",
         },
         {
           k: "code",
-          t: "ark save .keysark   # 先把清单本身存上云端(一次)\n\nark save            # 加密并上传清单里的全部文件\nark get             # 一键全部拉回本地",
+          t: "ark save   # 加密并上传同步清单里的全部文件\nark get    # 一键全部拉回本地",
         },
         {
           k: "p",
@@ -104,7 +104,7 @@ export const POSTS: BlogPost[] = [
         { k: "h2", t: "目标路径不用你手敲" },
         {
           k: "p",
-          t: "因为云端路径由 git origin 推导,文件会自动映射到 `github.com/owner/repo/<路径>`。所以连单文件操作也很简洁:在仓库里 `ark get github.com/owner/repo/.env` 就会把 `.env` 还原到原位——不用再写第二个参数。管道照常:重定向时它会改走 stdout。",
+          t: "对应的 vault 文件夹由 git origin 自动选中,文件会映射到 `github.com/owner/repo/<路径>`。所以连单文件操作也很简洁:在仓库里 `ark get github.com/owner/repo/.env` 就会把 `.env` 还原到原位——不用再写第二个参数。管道照常:重定向时它会改走 stdout。",
         },
         { k: "h2", t: "依然是零知识" },
         {

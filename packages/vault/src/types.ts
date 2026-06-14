@@ -15,6 +15,13 @@ export interface FolderMeta {
   name: string;
   parentId: string | null;
   createdAt: number;
+  /**
+   * 文件夹同步清单:该文件夹要批量同步的文件(仓库内相对路径,逐项)。
+   * 在网页上配置;CLI 在仓库里执行 `ark save` / `ark get` 时按 git origin 找到对应文件夹,
+   * 据此批量加解密同步。只存在加密 index 里,不落任何本地文件,故不与本地文件冲突。
+   * 缺省 / 空 = 未启用文件夹同步。
+   */
+  syncPaths?: string[];
 }
 /** 条目类型:文本(content 即正文)或文件(正文存独立 <id>.bin)。缺省视为 text(兼容旧数据)。 */
 export type EntryKind = "text" | "file";

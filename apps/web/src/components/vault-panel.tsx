@@ -249,6 +249,9 @@ export function VaultPanel({
   const [idleMinutes, setIdleMinutes] = useState(loadIdleMinutes);
   const [showAutoLock, setShowAutoLock] = useState(false);
   const [idleCustom, setIdleCustom] = useState("");
+  // 文件夹同步设置:正在编辑的文件夹 + 多行清单文本(每行一个仓库内相对路径)。
+  const [syncFolder, setSyncFolder] = useState<FolderMeta | null>(null);
+  const [syncText, setSyncText] = useState("");
 
   // 创建流程
   const [newLabel, setNewLabel] = useState("");
@@ -1077,6 +1080,19 @@ export function VaultPanel({
     await runFolderOp(() => vaultRef.current!.deleteFolder(f.id));
   }
 
+  // 文件夹同步设置:打开弹窗(回填当前清单)/ 保存(写 folder.syncPaths)。
+  function openSyncSettings(f: FolderMeta) {
+    setSyncFolder(f);
+    setSyncText((f.syncPaths ?? []).join("\n"));
+  }
+  async function saveSyncSettings() {
+    const f = syncFolder;
+    if (!f) return;
+    const lines = syncText.split(/\r?\n/);
+    setSyncFolder(null);
+    await runFolderOp(() => vaultRef.current!.setFolderSync(f.id, lines));
+  }
+
   // 锁定:清内存密钥 + 清工作台状态 + 清所有 secret state,回到选择/解锁界面。
   // 本机加密凭据保留,重新解锁只需输密码(主密钥仅内存,F5/关标签同样需要重输)。
   // 锁定本 tab + 广播给其它 tab 一起锁;闲置计时器与锁定按钮都走这里。
@@ -1888,6 +1904,10 @@ export function VaultPanel({
                   <Pencil className="h-4 w-4" />
                   {t("rename")}
                 </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => openSyncSettings(f)}>
+                  <RefreshCw className="h-4 w-4" />
+                  {t("folder_sync_action")}
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem destructive onSelect={() => removeFolder(f)}>
                   <Trash2 className="h-4 w-4" />
@@ -2063,6 +2083,30 @@ export function VaultPanel({
           </div>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("btn_cancel")}</AlertDialogCancel>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 文件夹同步设置:编辑该文件夹的 syncPaths(给 ark save/ark get 用) */}
+      <AlertDialog open={syncFolder !== null} onOpenChange={(o) => !o && setSyncFolder(null)}>
+        <AlertDialogContent {...testId("vault-folder-sync-dialog")}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("folder_sync_title", syncFolder?.name ?? "")}</AlertDialogTitle>
+            <AlertDialogDescription>{t("folder_sync_desc")}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <Textarea
+            {...testId("vault-folder-sync-input")}
+            value={syncText}
+            onChange={(e) => setSyncText(e.target.value)}
+            placeholder={t("folder_sync_ph")}
+            rows={7}
+            className="font-mono text-xs"
+          />
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("btn_cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={saveSyncSettings} disabled={busy}>
+              {t("btn_save")}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
