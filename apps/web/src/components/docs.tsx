@@ -89,7 +89,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section {...testId(`docs-section-${id}`)} className="scroll-mt-24">
+    <section id={id} {...testId(`docs-section-${id}`)} className="scroll-mt-24">
       <h2 className="flex items-center gap-2 text-xl font-bold tracking-tight sm:text-2xl">
         {Icon ? <Icon className="h-5 w-5 text-[var(--color-primary)]" aria-hidden="true" /> : null}
         {title}
@@ -227,6 +227,18 @@ export function Docs() {
                   <CodeBlock code={ex.code} id={ex.cap} />
                 </div>
               ))}
+            </Section>
+
+            {/* 批量同步 .keysark */}
+            <Section id="batch-sync" title={t("docs_batch_title")}>
+              <p className="text-[var(--color-muted-foreground)] leading-relaxed">{t("docs_batch_body")}</p>
+              <CodeBlock
+                code={
+                  "# .keysark — one repo-relative path per line\n.env\n.env.production\nconfig/app.secret.json\n\n# define the manifest once, then sync the whole project:\nark save .keysark\nark save     # encrypt & upload every listed file\nark get      # pull them all back (e.g. on a fresh clone)"
+                }
+                id="batch-sync"
+              />
+              <p className="text-sm text-[var(--color-muted-foreground)] leading-relaxed">{t("docs_batch_note")}</p>
             </Section>
 
             {/* 环境变量 */}

@@ -291,6 +291,11 @@ const zh = {
   docs_ex_save: "在项目目录里把 .env 存进保险库(自动按 git origin 推断路径):",
   docs_ex_new: "用管道把内容创建成新条目:",
   docs_ex_ci: "在 CI / 脚本里免交互使用(用环境变量提供助记词):",
+  docs_batch_title: "批量同步(.keysark)",
+  docs_batch_body:
+    "在项目里维护一份 .keysark 清单,逐行写上需要同步的文件(仓库内相对路径)。它存在云端的 <git-origin>/.keysark,只列路径、不含密钥,可安全提交进仓库。之后无需逐个文件操作:在仓库目录里 `ark save` 会把清单里的文件全部加密上传,`ark get` 会把它们全部拉回本地。",
+  docs_batch_note:
+    "`ark save`(无参数)会跳过未改动的文件;`ark get`(无参数)在内容不同的本地文件上默认不覆盖,加 --force 才覆盖——非常适合新机器 clone 后一键取回所有 .env。",
   docs_env_title: "环境变量",
   docs_env_server: "服务端地址(等同 --server)。",
   docs_env_mnemonic: "直接提供助记词,跳过本机凭据——适合 CI / 脚本。",
@@ -696,6 +701,11 @@ const en: typeof zh = {
   docs_ex_save: "From a project directory, save .env into the vault (path inferred from git origin):",
   docs_ex_new: "Create a new item by piping content in:",
   docs_ex_ci: "Non-interactive use in CI / scripts (phrase supplied via an env var):",
+  docs_batch_title: "Batch sync (.keysark)",
+  docs_batch_body:
+    "Keep a .keysark manifest in your project, one repo-relative path per line, listing the files to sync. It lives in the vault at <git-origin>/.keysark — it only lists paths (no secrets), so it is safe to commit. Then, instead of handling files one by one: inside the repo, `ark save` encrypts and uploads every listed file, and `ark get` pulls them all back.",
+  docs_batch_note:
+    "`ark save` (no args) skips files that haven't changed; `ark get` (no args) won't overwrite local files that differ unless you pass --force — perfect for restoring every .env in one shot on a fresh clone.",
   docs_env_title: "Environment variables",
   docs_env_server: "Server URL (same as --server).",
   docs_env_mnemonic: "Supply the recovery phrase directly, bypassing the local credential — for CI / scripts.",
