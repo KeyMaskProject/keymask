@@ -68,13 +68,6 @@ function fail(msg: string): never {
   process.exit(1);
 }
 
-async function readStdin(): Promise<string> {
-  if (process.stdin.isTTY) return "";
-  const chunks: Buffer[] = [];
-  for await (const c of process.stdin) chunks.push(c as Buffer);
-  return Buffer.concat(chunks).toString("utf8");
-}
-
 function transportFrom(args: Args): StorageTransport {
   const conn = resolveConn(flagStr(args.flags, "server"));
   if (!conn.token) fail(`Not logged in to ${conn.baseUrl}. Run \`ark login\`.`);
@@ -174,14 +167,6 @@ function fmtEntry(e: EntryMeta, folderPath?: string): string {
   const loc = folderPath ? dim(`  [${folderPath}]`) : "";
   const src = e.provider ? yellow(`  (${e.provider})`) : "";
   return `${id}  ${when}  ${e.title || "(untitled)"}${loc}${src}`;
-}
-
-/** 把短 id / 全 id 解析成条目。 */
-function findEntry(vault: Vault, idArg: string): EntryMeta {
-  const matches = vault.entries.filter((e) => e.id === idArg || e.id.startsWith(idArg));
-  if (matches.length === 0) fail(`No item: ${idArg}`);
-  if (matches.length > 1) fail(`Ambiguous id prefix: ${idArg}`);
-  return matches[0]!;
 }
 
 /** 按文件路径(a/b/title;末段为标题)找条目;路径中任一级文件夹不存在则视为无匹配。 */
@@ -549,16 +534,12 @@ Items:
                          different file, skips when identical; a directory keeps
                          the item's filename. Binary (file) items are written as
                          raw bytes.
-  ark new --title T [--content C] [--folder a/b]   Create item (no --content: reads stdin)
-  ark set <id> [--title T] [--content C] [--folder a/b]   Update item
-                         --folder is a path; missing levels are created; "/" = root
   ark save <source> [target]   Upload a file (text or binary; binary is stored as an
                          encrypted file item). target = a/b/title; trailing "/"
                          keeps the filename. Without target: detected from git origin
                          (e.g. github.com/me/repo/.env) or root + filename —
                          Enter to accept, or type a custom target (q cancels).
                          Existing target → new version; identical content → skipped
-  ark rm <id>            Delete item
   ark sync [folder]      Two-way sync a vault folder with a local directory by mtime.
                          Omit folder inside a git repo (origin selects it). Per file the
                          newer side wins (↑ local→vault, ↓ vault→local); missing-local
@@ -575,7 +556,6 @@ Local (offline; no login):
                          Prompts for the vault's recovery phrase, then writes one
                          JSON per item plus a self-contained index.html. Everything
                          stays on this machine — nothing is uploaded.
-  ark <zip|dir>          Shorthand: a path argument runs \`ark local\` directly.
 
 Unlock (same rules as the web app):
   Mnemonic is stored encrypted with an unlock password (12+ chars, 3+ char classes,
@@ -912,20 +892,6 @@ async function main() {
       return;
     }
 
-    case "new": {
-      const title = flagStr(args.flags, "title") ?? "";
-      let content = flagStr(args.flags, "content");
-      if (content === undefined) content = await readStdin();
-      const { vault } = await ready(args);
-      const folderPath = flagStr(args.flags, "folder");
-      const folderId = folderPath !== undefined ? await resolveFolderPath(vault, folderPath) : null;
-      const res = await vault.save({ title, content: content ?? "", folderId });
-      console.log(
-        `${OK} Created ${cyan(`[${res.id.slice(0, 8)}]`)}${res.synced ? dim(", synced") : red(` (local; sync failed: ${res.syncError})`)}`,
-      );
-      return;
-    }
-
     case "save": {
       const fileArg = args.positionals[0];
       const targetArg = args.positionals[1];
@@ -1033,33 +999,6 @@ async function main() {
       return;
     }
 
-    case "set": {
-      const idArg = args.positionals[0];
-      if (!idArg) fail("usage: ark set <id> [--title T] [--content C] [--folder a/b]");
-      const { vault } = await ready(args);
-      const meta = findEntry(vault, idArg!);
-      const cur = await vault.open(meta.id);
-      const title = flagStr(args.flags, "title") ?? cur.title;
-      let content = flagStr(args.flags, "content");
-      if (content === undefined) content = process.stdin.isTTY ? cur.content : await readStdin();
-      const folderPath = flagStr(args.flags, "folder");
-      const folderId =
-        folderPath !== undefined ? await resolveFolderPath(vault, folderPath) : cur.folderId;
-      const res = await vault.save({ id: meta.id, title, content, folderId });
-      console.log(`${OK} Updated ${cyan(`[${meta.id.slice(0, 8)}]`)}${res.synced ? dim(", synced") : red(` (local; ${res.syncError})`)}`);
-      return;
-    }
-
-    case "rm": {
-      const idArg = args.positionals[0];
-      if (!idArg) fail("usage: ark rm <id>");
-      const { vault } = await ready(args);
-      const meta = findEntry(vault, idArg!);
-      const res = await vault.remove(meta.id);
-      console.log(`${OK} Deleted ${cyan(`[${meta.id.slice(0, 8)}]`)}${res.synced ? dim(", synced") : red(` (local; ${res.syncError})`)}`);
-      return;
-    }
-
     case "sync": {
       await runSync(args);
       return;
@@ -1105,15 +1044,6 @@ async function main() {
     }
 
     default:
-      // 直接把路径当命令:`ark ./backup.zip` 等价于 `ark local ./backup.zip`。
-      if (existsSync(args.cmd)) {
-        await runLocal(args.cmd, args);
-        return;
-      }
-      // 看起来是个路径(含分隔符或 .zip 后缀)但不存在 → 给路径相关提示,而非「未知命令」。
-      if (/[\/\\]/.test(args.cmd) || args.cmd.toLowerCase().endsWith(".zip")) {
-        fail(`No such file or directory: ${resolve(args.cmd)}`);
-      }
       fail(`Unknown command: ${args.cmd}. See \`ark help\`.`);
   }
 }

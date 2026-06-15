@@ -21,10 +21,7 @@ const COMMANDS: { cmd: string; desc: MsgKey }[] = [
   { cmd: "ark vaults", desc: "docs_cmd_vaults" },
   { cmd: "ark ls", desc: "docs_cmd_ls" },
   { cmd: "ark get <path|id> [file]", desc: "docs_cmd_get" },
-  { cmd: "ark new --title <T> [--content <C>] [--folder <p>]", desc: "docs_cmd_new" },
-  { cmd: "ark set <id> [--title <T>] [--content <C>] [--folder <p>]", desc: "docs_cmd_set" },
   { cmd: "ark save <file> [target]", desc: "docs_cmd_save" },
-  { cmd: "ark rm <id>", desc: "docs_cmd_rm" },
   { cmd: "ark sync [folder]", desc: "docs_cmd_sync" },
   { cmd: "ark reset-anchor [vault]", desc: "docs_cmd_reset_anchor" },
   { cmd: "ark logout", desc: "docs_cmd_logout" },
@@ -48,7 +45,6 @@ const ENV_VARS: { name: string; desc: MsgKey }[] = [
 const EXAMPLES: { cap: MsgKey; code: string }[] = [
   { cap: "docs_ex_get", code: "ark get github.com/me/app/.env .env" },
   { cap: "docs_ex_save", code: "cd ~/my-project\nark save .env" },
-  { cap: "docs_ex_new", code: 'echo "my secret" | ark new --title "Notes" --folder personal' },
   {
     cap: "docs_ex_ci",
     code: 'export KEYSARK_MNEMONIC="word1 word2 … word12"\nark get secure/api-key > key.txt',
