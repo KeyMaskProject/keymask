@@ -8,4 +8,5 @@ export interface DocPage {
   body: Block[];
 }
 
-export type DocContent = Record<Locale, DocPage>;
+// en/zh 为全量;其余语言可缺省,读取时回退 en(见 i18n 的 pickLocale)。
+export type DocContent = Partial<Record<Locale, DocPage>>;

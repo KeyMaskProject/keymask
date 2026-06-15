@@ -1,7 +1,14 @@
 import type { Block } from "@/components/prose";
-import type { Locale } from "@/lib/i18n";
+import { htmlLang, type Locale } from "@/lib/i18n";
+import es from "./blog/es";
+import fr from "./blog/fr";
+import de from "./blog/de";
+import ja from "./blog/ja";
+import ko from "./blog/ko";
+import pt from "./blog/pt";
+import ru from "./blog/ru";
 
-interface PostLocale {
+export interface PostLocale {
   title: string;
   description: string;
   body: Block[];
@@ -10,9 +17,13 @@ interface PostLocale {
 export interface BlogPost {
   slug: string;
   date: string; // ISO yyyy-mm-dd
+  // en/zh 为全量人工正文(本文件内);其余语言的机翻正文在 ./blog/<lang>.ts(按 slug 索引),缺失回退 en。
   en: PostLocale;
   zh: PostLocale;
 }
+
+// 各语言机翻正文覆盖表(按 slug 索引);en/zh 走 BlogPost 内联字段。
+const BLOG_OVERRIDES: Partial<Record<Locale, Record<string, PostLocale>>> = { es, fr, de, ja, ko, pt, ru };
 
 // 新到旧。
 export const POSTS: BlogPost[] = [
@@ -272,8 +283,16 @@ export function getPost(slug: string): BlogPost | undefined {
   return POSTS.find((p) => p.slug === slug);
 }
 
+/** 取某篇文章在当前语言下的正文:en/zh 用内联字段,其余语言用机翻覆盖表,缺失回退 en。 */
+export function getPostContent(post: BlogPost, locale: Locale): PostLocale {
+  if (locale === "en") return post.en;
+  if (locale === "zh") return post.zh;
+  return BLOG_OVERRIDES[locale]?.[post.slug] ?? post.en;
+}
+
 export function formatPostDate(iso: string, locale: Locale): string {
-  return new Date(iso).toLocaleDateString(locale === "zh" ? "zh-CN" : "en-US", {
+  // htmlLang 给出合法 BCP-47(en/zh-CN/es/fr/de/ja/ko/pt/ru),直接用于日期本地化。
+  return new Date(iso).toLocaleDateString(htmlLang(locale), {
     year: "numeric",
     month: "long",
     day: "numeric",

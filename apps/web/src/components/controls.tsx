@@ -13,7 +13,7 @@ import {
 import { GithubMark } from "./brand";
 import { useLocale, useTheme } from "./providers";
 import { BUILD_REPO } from "@/lib/build-info";
-import { LOCALES, localeHref, splitLocale, THEMES, type Theme } from "@/lib/i18n";
+import { LOCALES, LOCALE_NATIVE_NAMES, localeHref, splitLocale, THEMES, type Theme } from "@/lib/i18n";
 
 // 头部圆形图标按钮样式(语言/主题/文档共用,保持视觉一致)。
 export const CONTROL_TRIGGER =
@@ -77,7 +77,7 @@ export function HeaderControls() {
         <DropdownMenuContent>
           {LOCALES.map((l) => (
             <DropdownMenuItem key={l} onSelect={() => window.location.assign(localeHref(basePath, l))}>
-              <span className="flex-1">{l === "zh" ? "中文" : "English"}</span>
+              <span className="flex-1">{LOCALE_NATIVE_NAMES[l]}</span>
               {locale === l ? <Check className="h-4 w-4" /> : null}
             </DropdownMenuItem>
           ))}

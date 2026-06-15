@@ -3,8 +3,10 @@ import { Inter } from "next/font/google";
 import { cookies } from "next/headers";
 import "./globals.css";
 import { Providers } from "@/components/providers";
+import { JsonLd } from "@/components/json-ld";
 import { providerFlags, storageLabel } from "@/lib/providers";
 import {
+  buildLanguageAlternates,
   htmlLang,
   localeHref,
   translate,
@@ -12,6 +14,7 @@ import {
   type MsgKey,
   type Theme,
 } from "@/lib/i18n";
+import { organizationLd, websiteLd, SITE_URL } from "@/lib/seo";
 import { getServerLocale } from "@/lib/locale-server";
 
 const inter = Inter({
@@ -20,8 +23,7 @@ const inter = Inter({
   variable: "--font-sans",
 });
 
-// 部署时设 NEXT_PUBLIC_SITE_URL,用于把 OG / favicon / canonical 的相对路径解析成绝对 URL。
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:6134";
+// SITE_URL 统一来自 @/lib/seo(含生产期未配置告警),用于把 OG / favicon / canonical 解析成绝对 URL。
 const OG_BANNER = "/keysark-og-banner.png";
 
 const ICONS: Metadata["icons"] = {
@@ -53,6 +55,10 @@ export async function generateMetadata(): Promise<Metadata> {
     applicationName: "KeysArk",
     manifest: "/site.webmanifest",
     icons: ICONS,
+    // 站点根级 hreflang(覆盖全部语言),与各页面级 alternates 自洽。
+    alternates: { languages: buildLanguageAlternates("/") },
+    // Google Search Console 站点验证(HTML 法);未配置环境变量则不输出该 meta。
+    verification: { google: process.env.GOOGLE_SITE_VERIFICATION },
     openGraph: {
       type: "website",
       siteName: "KeysArk",
@@ -94,6 +100,8 @@ export default async function RootLayout({
       suppressHydrationWarning
     >
       <body className="font-sans antialiased">
+        {/* 站点级结构化数据:Organization + WebSite(全站一次) */}
+        <JsonLd data={[organizationLd(), websiteLd()]} />
         <Providers initialLocale={locale} initialTheme={theme}>
           {children}
         </Providers>

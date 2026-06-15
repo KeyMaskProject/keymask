@@ -2,26 +2,26 @@ import type { Metadata } from "next";
 import { ContentShell } from "@/components/content-shell";
 import { Prose } from "@/components/prose";
 import { PRIVACY } from "@/lib/content/privacy";
-import { localeHref } from "@/lib/i18n";
+import { buildLanguageAlternates, localeHref, pickLocale } from "@/lib/i18n";
 import { getServerLocale } from "@/lib/locale-server";
 import { testId } from "@/lib/test-id";
 
 export async function generateMetadata(): Promise<Metadata> {
   const locale = await getServerLocale();
-  const c = PRIVACY[locale];
+  const c = pickLocale(PRIVACY, locale);
   return {
     title: `${c.title} — KeysArk`,
     description: c.description,
     alternates: {
       canonical: localeHref("/privacy", locale),
-      languages: { en: "/privacy", "zh-CN": "/zh/privacy", "x-default": "/privacy" },
+      languages: buildLanguageAlternates("/privacy"),
     },
   };
 }
 
 export default async function PrivacyPage() {
   const locale = await getServerLocale();
-  const c = PRIVACY[locale];
+  const c = pickLocale(PRIVACY, locale);
   return (
     <ContentShell locale={locale} scope="privacy">
       <article {...testId("privacy-article")}>

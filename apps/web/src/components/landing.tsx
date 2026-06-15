@@ -18,10 +18,13 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { Wordmark } from "./brand";
 import { AndroidMark, AppleMark, LinuxMark, WindowsMark } from "./platform-marks";
 import { DocsButton, HeaderControls, RepoButton } from "./controls";
+import { JsonLd } from "./json-ld";
 import { useLocale } from "./providers";
 import { BUILD_REPO } from "@/lib/build-info";
-import { localeHref, type MsgKey } from "@/lib/i18n";
+import { HOME_FAQ } from "@/lib/content/home-faq";
+import { localeHref, pickLocale, type MsgKey } from "@/lib/i18n";
 import { storageLabel, type ProviderFlags } from "@/lib/providers";
+import { faqLd } from "@/lib/seo";
 import { testId } from "@/lib/test-id";
 
 // 第一屏三特性:安全 / 免费 / 开源。
@@ -112,6 +115,7 @@ export function Landing({ error, providers }: { error?: string; providers: Provi
   const { google: showGoogle, baidu: showBaidu } = providers;
   // 联动主页文案:存储后端展示名随启用的入口变化。
   const store = storageLabel(providers, { google: t("store_google"), baidu: t("store_baidu") });
+  const homeFaq = pickLocale(HOME_FAQ, locale);
   // 站内链接随当前语言加前缀(默认英文无前缀);外链(GitHub、/api/*)不加。
   const homeHref = localeHref("/", locale);
   const docsHref = localeHref("/docs", locale);
@@ -403,19 +407,52 @@ export function Landing({ error, providers }: { error?: string; providers: Provi
           </div>
         </section>
 
+        {/* FAQ(承载目标词 + FAQPage 结构化数据) */}
+        {homeFaq.length > 0 ? (
+          <section {...testId("landing-faq")} className="mx-auto w-full max-w-3xl px-6 py-16">
+            <JsonLd data={faqLd(homeFaq)} />
+            <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">{t("lp_faq_title")}</h2>
+            <div className="mt-8 space-y-6">
+              {homeFaq.map((f) => (
+                <div key={f.q}>
+                  <h3 className="font-semibold">{f.q}</h3>
+                  <p className="mt-1.5 text-[var(--color-muted-foreground)] leading-relaxed">{f.a}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
         {/* 页脚 */}
-        <footer {...testId("landing-footer")} className="mx-auto flex w-full max-w-6xl flex-col items-start justify-between gap-4 px-6 py-8 text-xs text-[var(--color-muted-foreground)] sm:flex-row sm:items-center">
-          <Wordmark className="text-sm font-medium" />
-          <div className="flex flex-wrap items-center gap-4">
-            <a href={localeHref("/about", locale)} className="transition-colors hover:text-[var(--color-foreground)]">
-              {t("nav_about")}
+        <footer {...testId("landing-footer")} className="mx-auto w-full max-w-6xl px-6 py-8 text-xs text-[var(--color-muted-foreground)]">
+          {/* SEO 内链:关键词锚文本指向各长尾着陆页 */}
+          <nav {...testId("landing-footer-seo-links")} className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-[var(--color-border)] pb-5">
+            <a href={localeHref("/open-source-password-manager", locale)} className="transition-colors hover:text-[var(--color-foreground)]">
+              {t("lp_link_password_manager")}
             </a>
-            <a href={localeHref("/blog", locale)} className="transition-colors hover:text-[var(--color-foreground)]">
-              {t("nav_blog")}
+            <a href={localeHref("/free-secrets-vault", locale)} className="transition-colors hover:text-[var(--color-foreground)]">
+              {t("lp_link_secrets")}
             </a>
-            <a href={localeHref("/privacy", locale)} className="transition-colors hover:text-[var(--color-foreground)]">
-              {t("nav_privacy")}
+            <a href={localeHref("/env-file-backup", locale)} className="transition-colors hover:text-[var(--color-foreground)]">
+              {t("lp_link_env")}
             </a>
+            <a href={localeHref("/bip39-backup", locale)} className="transition-colors hover:text-[var(--color-foreground)]">
+              {t("lp_link_bip39")}
+            </a>
+          </nav>
+          <div className="mt-5 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+            <Wordmark className="text-sm font-medium" />
+            <div className="flex flex-wrap items-center gap-4">
+              <a href={localeHref("/about", locale)} className="transition-colors hover:text-[var(--color-foreground)]">
+                {t("nav_about")}
+              </a>
+              <a href={localeHref("/blog", locale)} className="transition-colors hover:text-[var(--color-foreground)]">
+                {t("nav_blog")}
+              </a>
+              <a href={localeHref("/privacy", locale)} className="transition-colors hover:text-[var(--color-foreground)]">
+                {t("nav_privacy")}
+              </a>
+            </div>
           </div>
         </footer>
       </div>

@@ -1,16 +1,38 @@
-// 轻量 i18n:中/英双语词典 + 取词函数。
-// 语言由 URL 决定(默认英文在根路径,其它语言走 /<locale> 前缀,见 proxy.ts);主题仍用 cookie 持久化。
-export type Locale = "zh" | "en";
+// 轻量 i18n:多语言词典 + 取词函数。
+// en/zh 为全量人工词典(本文件内);es/fr/de/ja/ko/pt/ru 为机翻 Partial 覆盖词典(./i18n/<lang>.ts),
+// 缺失键运行时回退 en。语言由 URL 决定(默认英文在根路径,其它语言走 /<locale> 前缀,见 proxy.ts)。
+import es from "./i18n/es";
+import fr from "./i18n/fr";
+import de from "./i18n/de";
+import ja from "./i18n/ja";
+import ko from "./i18n/ko";
+import pt from "./i18n/pt";
+import ru from "./i18n/ru";
+
+export type Locale = "en" | "zh" | "es" | "fr" | "de" | "ja" | "ko" | "pt" | "ru";
 export type Theme = "system" | "light" | "dark";
 
 export const THEME_COOKIE = "keysark_theme";
 
-// 默认英文(根路径无前缀);其它语言放到路由里(如 /zh)。顺序即语言切换器里的展示顺序。
-export const LOCALES: Locale[] = ["en", "zh"];
+// 默认英文(根路径无前缀);其它语言放到路由里(如 /zh、/es)。顺序即语言切换器里的展示顺序。
+export const LOCALES: Locale[] = ["en", "zh", "es", "fr", "de", "ja", "ko", "pt", "ru"];
 export const THEMES: Theme[] = ["system", "light", "dark"];
 
 export const DEFAULT_LOCALE: Locale = "en";
 export const NON_DEFAULT_LOCALES: Locale[] = LOCALES.filter((l) => l !== DEFAULT_LOCALE);
+
+// 语言切换器里显示的母语名(每种语言用其本地写法)。
+export const LOCALE_NATIVE_NAMES: Record<Locale, string> = {
+  en: "English",
+  zh: "中文",
+  es: "Español",
+  fr: "Français",
+  de: "Deutsch",
+  ja: "日本語",
+  ko: "한국어",
+  pt: "Português",
+  ru: "Русский",
+};
 
 /** 非默认语言加 `/<locale>` 前缀;默认语言(英文)在根路径无前缀。 */
 export function localePrefix(locale: Locale): string {
@@ -115,6 +137,15 @@ const zh = {
     `KeysArk 是开源免费的端到端加密保管库。用 BIP39 助记词在浏览器里派生密钥加密,密文存进你自己的${store};服务端只经手密文,可自行托管。`,
   meta_keywords:
     "密码管理器, 密钥管理, 开源, 端到端加密, 零知识, BIP39, 助记词, Google Drive, 百度网盘, 自托管, 私钥保管, .env 备份",
+
+  // SEO 着陆页通用标签
+  lp_faq_title: "常见问题",
+  lp_related_title: "相关页面",
+  lp_cta: "免费开始",
+  lp_link_password_manager: "开源密码管理器",
+  lp_link_secrets: "免费密钥保管库",
+  lp_link_env: "加密 .env 文件",
+  lp_link_bip39: "BIP39 助记词备份",
 
   // 创建保险库
   create_title: "创建你的保险库",
@@ -523,6 +554,15 @@ const en: typeof zh = {
   meta_keywords:
     "password manager, key management, open source, end-to-end encryption, zero-knowledge, BIP39, mnemonic, Google Drive, Baidu netdisk, self-hosted, secret storage, .env backup",
 
+  // SEO 着陆页通用标签
+  lp_faq_title: "FAQ",
+  lp_related_title: "Related",
+  lp_cta: "Get started free",
+  lp_link_password_manager: "Open-source password manager",
+  lp_link_secrets: "Free secrets vault",
+  lp_link_env: "Encrypt .env files",
+  lp_link_bip39: "BIP39 backup",
+
   create_title: "Create your vault",
   create_desc_a: "KeysArk generates a 24-word recovery phrase as your master key. It is ",
   create_desc_strong: "shown once and lives only with you",
@@ -849,14 +889,42 @@ const en: typeof zh = {
 };
 
 export type MsgKey = keyof typeof zh;
+// 词典形状(以 zh 为基准定义,en 与各语言覆盖词典都按它对齐)。
+export type Messages = typeof zh;
 
-const messages: Record<Locale, typeof zh> = { zh, en };
+// en/zh 为全量人工词典;其余语言为机翻 Partial,缺失键运行时回退 en(再回退 zh)。
+const messages: Partial<Record<Locale, Partial<Messages>>> = { zh, en, es, fr, de, ja, ko, pt, ru };
 
 export function translate(locale: Locale, key: MsgKey, ...args: unknown[]): string {
-  const m = messages[locale][key] as Msg;
+  const m = (messages[locale]?.[key] ?? messages.en?.[key] ?? messages.zh?.[key]) as Msg;
   return typeof m === "function" ? (m as (...a: unknown[]) => string)(...args) : m;
 }
 
+// locale → BCP-47 语言标签(用于 <html lang>、hreflang、OG locale)。
+const HTML_LANG: Record<Locale, string> = {
+  en: "en",
+  zh: "zh-CN",
+  es: "es",
+  fr: "fr",
+  de: "de",
+  ja: "ja",
+  ko: "ko",
+  pt: "pt",
+  ru: "ru",
+};
 export function htmlLang(locale: Locale): string {
-  return locale === "zh" ? "zh-CN" : "en";
+  return HTML_LANG[locale];
+}
+
+/** 从「按语言索引的内容映射」取当前语言的内容,缺失则回退 en(再回退 zh)。 */
+export function pickLocale<T>(map: Partial<Record<Locale, T>>, locale: Locale): T {
+  return (map[locale] ?? map[DEFAULT_LOCALE] ?? map.zh)!;
+}
+
+/** 为某应用路径生成覆盖全部语言的 hreflang 备用链接(含 x-default)。 */
+export function buildLanguageAlternates(path: string): Record<string, string> {
+  const languages: Record<string, string> = {};
+  for (const l of LOCALES) languages[htmlLang(l)] = localeHref(path, l);
+  languages["x-default"] = localeHref(path, DEFAULT_LOCALE);
+  return languages;
 }

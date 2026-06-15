@@ -5,7 +5,7 @@
 //「生成这份备份的软件运行环境」并复现解密 —— 检出对应源码、对齐依赖、核对加密算法与参数。
 // 客户端可安全引用:NEXT_PUBLIC_* 在构建时被内联为字符串字面量;运行期字段读 navigator/Intl。
 import { DEFAULT_ARGON2ID_PARAMS } from "@keysark/crypto";
-import type { Locale } from "@/lib/i18n";
+import { pickLocale, type Locale } from "@/lib/i18n";
 
 export const BUILD_VERSION = process.env.NEXT_PUBLIC_KEYSARK_VERSION ?? "0.0.0";
 /** ark CLI(@keysark/cli)版本;构建期从 apps/cli/package.json 注入,展示在文档/落地页。 */
@@ -144,7 +144,8 @@ interface LabelSet {
   ua: string;
 }
 
-const LABELS: Record<Locale, LabelSet> = {
+// en/zh 全量;其余语言回退 en(见 provenanceRows 的 pickLocale)。
+const LABELS: Partial<Record<Locale, LabelSet>> = {
   zh: {
     title: "构建环境上下文",
     cliVersion: "ark CLI 版本",
@@ -192,7 +193,7 @@ export interface ProvenanceRow {
 
 /** 出处清单 → 有序 [标签, 值] 行(PDF 第二页与 HTML 环境区共用渲染)。 */
 export function provenanceRows(locale: Locale): { title: string; rows: ProvenanceRow[] } {
-  const L = LABELS[locale];
+  const L = pickLocale(LABELS, locale);
   const p = collectProvenance(locale);
   const d = p.build.deps;
   const dep = (n: string) => d[n] ?? "n/a";

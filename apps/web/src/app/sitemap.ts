@@ -1,30 +1,37 @@
 import type { MetadataRoute } from "next";
 import { POSTS } from "@/lib/content/blog";
-import { localeHref } from "@/lib/i18n";
+import { LANDING_PAGES } from "@/lib/content/landing-pages";
+import { buildLanguageAlternates, localeHref } from "@/lib/i18n";
+import { absUrl } from "@/lib/seo";
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:6134";
-const abs = (path: string) => new URL(path, SITE_URL).toString();
+// 静态页的 lastmod:用最新一篇文章日期作为站点内容更新基线(无逐页 mtime 时的合理近似)。
+const SITE_LASTMOD = POSTS.reduce((acc, p) => (p.date > acc ? p.date : acc), POSTS[0]?.date ?? "2026-01-01");
 
-// 公开可索引的页面;每条带 hreflang 备用链接(英文默认无前缀,中文走 /zh)。
-const PUBLIC_PATHS = [
+// 公开可索引的页面;每条带覆盖全部语言的 hreflang 备用链接 + lastmod。
+const STATIC_PATHS = [
   "/",
   "/docs",
   "/about",
   "/privacy",
   "/blog",
-  ...POSTS.map((p) => `/blog/${p.slug}`),
+  ...LANDING_PAGES.map((p) => `/${p.slug}`),
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  return PUBLIC_PATHS.map((path) => ({
-    url: abs(localeHref(path, "en")),
-    changeFrequency: "weekly",
-    priority: path === "/" ? 1 : 0.7,
-    alternates: {
-      languages: {
-        en: abs(localeHref(path, "en")),
-        "zh-CN": abs(localeHref(path, "zh")),
+  const entries: { path: string; lastModified: string }[] = [
+    ...STATIC_PATHS.map((path) => ({ path, lastModified: SITE_LASTMOD })),
+    ...POSTS.map((p) => ({ path: `/blog/${p.slug}`, lastModified: p.date })),
+  ];
+  return entries.map(({ path, lastModified }) => {
+    const langs = buildLanguageAlternates(path);
+    return {
+      url: absUrl(localeHref(path, "en")),
+      lastModified,
+      changeFrequency: "weekly",
+      priority: path === "/" ? 1 : 0.7,
+      alternates: {
+        languages: Object.fromEntries(Object.entries(langs).map(([k, v]) => [k, absUrl(v)])),
       },
-    },
-  }));
+    };
+  });
 }

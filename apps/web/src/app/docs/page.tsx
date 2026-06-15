@@ -1,12 +1,21 @@
 import type { Metadata } from "next";
 import { Docs } from "@/components/docs";
+import { buildLanguageAlternates, localeHref, translate } from "@/lib/i18n";
+import { getServerLocale } from "@/lib/locale-server";
 
-export const metadata: Metadata = {
-  title: "ark CLI 使用文档 / CLI documentation — KeysArk",
-  description:
-    "ark 是 KeysArk 的命令行客户端:在终端读写端到端加密保险库,加解密只在本地完成。 / ark is the KeysArk command-line client — read and write your end-to-end encrypted vault from the terminal.",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getServerLocale();
+  return {
+    title: `${translate(locale, "docs_title")} — KeysArk`,
+    description: translate(locale, "docs_subtitle"),
+    alternates: {
+      canonical: localeHref("/docs", locale),
+      languages: buildLanguageAlternates("/docs"),
+    },
+  };
+}
 
-export default function DocsPage() {
-  return <Docs />;
+export default async function DocsPage() {
+  const locale = await getServerLocale();
+  return <Docs locale={locale} />;
 }

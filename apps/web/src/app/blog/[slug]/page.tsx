@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { ContentShell } from "@/components/content-shell";
+import { JsonLd } from "@/components/json-ld";
 import { Prose } from "@/components/prose";
-import { formatPostDate, getPost, POSTS } from "@/lib/content/blog";
-import { localeHref, translate } from "@/lib/i18n";
+import { formatPostDate, getPost, getPostContent, POSTS } from "@/lib/content/blog";
+import { buildLanguageAlternates, localeHref, translate } from "@/lib/i18n";
+import { articleLd, breadcrumbLd } from "@/lib/seo";
 import { getServerLocale } from "@/lib/locale-server";
 import { testId } from "@/lib/test-id";
 
@@ -20,23 +22,20 @@ export async function generateMetadata({
   const post = getPost(slug);
   if (!post) return {};
   const locale = await getServerLocale();
-  const c = post[locale];
+  const c = getPostContent(post, locale);
   return {
     title: `${c.title} — KeysArk`,
     description: c.description,
     alternates: {
       canonical: localeHref(`/blog/${slug}`, locale),
-      languages: {
-        en: `/blog/${slug}`,
-        "zh-CN": `/zh/blog/${slug}`,
-        "x-default": `/blog/${slug}`,
-      },
+      languages: buildLanguageAlternates(`/blog/${slug}`),
     },
     openGraph: {
       type: "article",
       title: c.title,
       description: c.description,
       publishedTime: post.date,
+      modifiedTime: post.date,
     },
   };
 }
@@ -50,9 +49,27 @@ export default async function BlogPostPage({
   const post = getPost(slug);
   if (!post) notFound();
   const locale = await getServerLocale();
-  const c = post[locale];
+  const c = getPostContent(post, locale);
+  const urlPath = localeHref(`/blog/${slug}`, locale);
   return (
     <ContentShell locale={locale} scope="blog-post">
+      <JsonLd
+        data={[
+          articleLd({
+            title: c.title,
+            description: c.description,
+            datePublished: post.date,
+            dateModified: post.date,
+            locale,
+            urlPath,
+          }),
+          breadcrumbLd([
+            { name: "KeysArk", path: localeHref("/", locale) },
+            { name: translate(locale, "nav_blog"), path: localeHref("/blog", locale) },
+            { name: c.title, path: urlPath },
+          ]),
+        ]}
+      />
       <a
         href={localeHref("/blog", locale)}
         className="text-sm text-[var(--color-muted-foreground)] transition-colors hover:text-[var(--color-foreground)]"

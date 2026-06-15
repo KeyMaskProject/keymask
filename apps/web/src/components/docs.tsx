@@ -1,15 +1,12 @@
-"use client";
-
-// CLI 使用文档页:双语(随 locale 切换)介绍 ark 命令行客户端的安装、配置、命令与示例。
-// 命令片段为纯文本展示 + 复制,不涉及任何密钥/明文。布局沿用落地页的极光背景与配色。
+// CLI 使用文档页:服务端渲染(命令文档进 HTML,利于 SEO),随 locale 切换语言。
+// 唯一交互(代码块复制按钮)抽到 client 组件 ./docs-code-block;命令片段为纯文本展示,不涉及任何密钥/明文。
 import { Button } from "@keysark/ui";
-import { ArrowLeft, Check, Copy, Terminal, type LucideIcon } from "lucide-react";
-import { useState } from "react";
+import { ArrowLeft, Terminal, type LucideIcon } from "lucide-react";
 import { Wordmark } from "./brand";
 import { HeaderControls } from "./controls";
-import { useT } from "./providers";
+import { CodeBlock } from "./docs-code-block";
 import { CLI_VERSION } from "@/lib/build-info";
-import type { MsgKey } from "@/lib/i18n";
+import { translate, type Locale, type MsgKey } from "@/lib/i18n";
 import { testId } from "@/lib/test-id";
 
 // 命令一览(命令字面量不翻译,描述走 i18n)
@@ -51,29 +48,6 @@ const EXAMPLES: { cap: MsgKey; code: string }[] = [
   },
 ];
 
-function CodeBlock({ code, id }: { code: string; id: string }) {
-  const [copied, setCopied] = useState(false);
-  function copy() {
-    void navigator.clipboard.writeText(code).then(() => {
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1500);
-    });
-  }
-  return (
-    <div className="relative min-w-0 rounded-lg border border-[var(--color-border)] bg-[var(--color-accent)]">
-      <pre className="overflow-x-auto px-3 py-2.5 pr-10 font-mono text-xs leading-relaxed">{code}</pre>
-      <button
-        type="button"
-        onClick={copy}
-        className="absolute right-1.5 top-1.5 flex h-6 w-6 items-center justify-center rounded text-[var(--color-muted-foreground)] transition-colors hover:bg-[var(--color-surface)] hover:text-[var(--color-foreground)]"
-        aria-label={`copy ${id}`}
-      >
-        {copied ? <Check className="h-3.5 w-3.5 text-[var(--color-success)]" /> : <Copy className="h-3.5 w-3.5" />}
-      </button>
-    </div>
-  );
-}
-
 function Section({
   id,
   title,
@@ -96,8 +70,8 @@ function Section({
   );
 }
 
-export function Docs() {
-  const t = useT();
+export function Docs({ locale }: { locale: Locale }) {
+  const t = (key: MsgKey, ...args: unknown[]) => translate(locale, key, ...args);
 
   return (
     <div {...testId("docs")} className="relative flex min-h-screen flex-col">
