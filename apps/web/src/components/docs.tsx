@@ -26,6 +26,7 @@ const COMMANDS: { cmd: string; desc: MsgKey }[] = [
   { cmd: "ark save <file> [target]", desc: "docs_cmd_save" },
   { cmd: "ark rm <id>", desc: "docs_cmd_rm" },
   { cmd: "ark sync [folder]", desc: "docs_cmd_sync" },
+  { cmd: "ark reset-anchor [vault]", desc: "docs_cmd_reset_anchor" },
   { cmd: "ark logout", desc: "docs_cmd_logout" },
   { cmd: "ark forget", desc: "docs_cmd_forget" },
 ];

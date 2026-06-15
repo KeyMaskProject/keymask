@@ -211,6 +211,18 @@ export function deleteDeviceKey(blobDir: string, legacyFilePath: string): void {
   rmSync(legacyFilePath, { force: true }); // 清掉旧版本可能留下的明文 device.key
 }
 
+/** 清除某库的回滚锚点(rev-<vaultId>)。用于「确属本人重置/恢复了该库」时,让 CLI 以网盘
+ *  当前 rev 为新基线重新锚定。keystore 不可用或条目不存在 → 静默(无锚点本就无需清)。 */
+export function deleteRevAnchor(vaultId: string, blobDir: string): void {
+  const backend = backendFor(`rev-${vaultId}`, blobDir);
+  if (!backend) return;
+  try {
+    backend.remove();
+  } catch {
+    /* 工具缺失或条目不存在,忽略 */
+  }
+}
+
 /**
  * 每库「已接受的最新 index rev」可信锚点(存 OS keystore)。
  * CLI 的本地缓存是内存级(进程退出即清),靠它无法跨进程检出回滚;keystore 锚点持久且抗篡改,

@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, resolve } from "node:path";
 import { checkVerifier, deriveKey, sha256Hex, validateMnemonic } from "@keysark/crypto";
-import { b64decode, vaultVerifierAad } from "@keysark/vault";
+import { b64decode, vaultVerifierAad, VaultRollbackError } from "@keysark/vault";
 import type { EntryMeta, StorageTransport, Vault, VaultDescriptor } from "@keysark/vault";
 import { openLocalSource } from "./local";
 import { renderVaultHtml, type ExportData, type ExportItem } from "./export-html";
@@ -26,6 +26,7 @@ import { gitContext } from "./git";
 import { detectSourceProvider, parseSaveTarget, proposeSaveTarget, targetDisplay } from "./save-target";
 import { askConfirm, askSecretText, askSelect, askText, note, spinner } from "./ui";
 import { fetchVaults, openVault, pickVault } from "./vault-select";
+import { deleteRevAnchor } from "./keystore";
 
 interface Args {
   cmd: string;
@@ -116,6 +117,7 @@ async function ready(
   args: Args,
   allowPrompt = true,
   forcePassword = false,
+  readOnly = false,
 ): Promise<{ key: CryptoKey; descriptor: VaultDescriptor; vault: Vault; transport: StorageTransport }> {
   const transport = transportFrom(args);
   const mnemonic = await acquireMnemonic(allowPrompt, forcePassword);
@@ -133,8 +135,37 @@ async function ready(
   const descriptor = await pickVault(vaults, key, flagStr(args.flags, "vault"));
   if (!descriptor) fail("Mnemonic does not match any vault.");
   const vault = openVault(key, descriptor!, transport);
-  await vault.load();
+  // 回滚检测:只读命令(readOnly)降级为警告并照常载入回退后的远端 index;写命令硬拦,
+  // 给出可操作提示(确属本人重置 → `ark reset-anchor`),避免在回退基线上写而丢数据。
+  try {
+    await vault.load(readOnly ? { onRollback: warnRollback } : undefined);
+  } catch (e) {
+    if (e instanceof VaultRollbackError) fail(rollbackWriteHint(descriptor!.id, e));
+    throw e;
+  }
   return { key, descriptor: descriptor!, vault, transport };
+}
+
+/** 只读命令撞到回滚:警告但放行(读旧数据风险有限)。 */
+function warnRollback(e: VaultRollbackError): void {
+  console.error(
+    yellow(
+      `! vault index rolled back (remote rev ${e.remoteRev} < last accepted ${e.localRev}); showing remote contents anyway.\n` +
+        `  If you didn't reset this vault, investigate. If you did, run \`ark reset-anchor\` to clear the stale guard.`,
+    ),
+  );
+}
+
+/** 写命令撞到回滚:硬拦,给出可操作指引。 */
+function rollbackWriteHint(vaultId: string, e: VaultRollbackError): string {
+  return (
+    `vault index rollback detected: remote rev ${e.remoteRev} < local rev ${e.localRev}.\n` +
+    "The vault on your netdisk is at an older version than this machine last accepted —\n" +
+    "likely reset/restored, or (rarely) tampered with. Writes are blocked to avoid\n" +
+    "clobbering newer remote data (reads still work, with a warning).\n" +
+    `If you intentionally reset this vault, clear the stale anchor and retry:\n` +
+    `  ${cyan(`ark reset-anchor --vault ${vaultId.slice(0, 8)}`)}`
+  );
 }
 
 function fmtEntry(e: EntryMeta, folderPath?: string): string {
@@ -533,6 +564,10 @@ Items:
                          newer side wins (↑ local→vault, ↓ vault→local); missing-local
                          files are pulled. Shows the plan and asks before applying
                          (--yes to skip the prompt). Relative paths are preserved.
+  ark reset-anchor [vault]   Clear the rollback guard for a vault (id/label, or --vault).
+                         Use only when you intentionally reset/restored a vault and reads
+                         warn / writes are blocked by "index rollback detected". Next
+                         load re-anchors to the current remote version.
 
 Local (offline; no login):
   ark local <zip|dir> [--out <dir>]   Decrypt a backup downloaded from your netdisk
@@ -793,7 +828,7 @@ async function main() {
     }
 
     case "ls": {
-      const { vault } = await ready(args);
+      const { vault } = await ready(args, true, false, true); // 只读:回滚降级为警告
       const entries = vault.entries;
       if (entries.length === 0) {
         console.log(dim("(empty)"));
@@ -808,8 +843,8 @@ async function main() {
       const pathArg = args.positionals[0];
       const localArg = args.positionals[1];
       if (!pathArg) fail("Specify a path to get: `ark get <path> [local-file]`.");
-      // get 是敏感读取:每次都强制输密码,不吃解锁缓存。
-      const { vault } = await ready(args, true, true);
+      // get 是敏感读取:每次都强制输密码,不吃解锁缓存;只读 → 回滚降级为警告。
+      const { vault } = await ready(args, true, true, true);
 
       // git-origin 感知:路径属于当前所在仓库时,既能解析嵌套条目(标题含 "/"),
       // 也能在缺省本地目标时,自动把文件还原到仓库内相对路径。
@@ -916,17 +951,23 @@ async function main() {
 
       const { vault } = await ready(args);
 
+      // git 库 → 顺带标出识别到的 service provider(如 github);非 git / 未识别则不显示。
+      const providerTag = target!.provider ? yellow(`  (${target!.provider})`) : "";
       if (explicit) {
         console.log(`${dim("Source:")} ${abs}`);
-        console.log(`${dim("Target:")} ${bold(targetDisplay(target!))}`);
+        console.log(`${dim("Target:")} ${bold(targetDisplay(target!))}${providerTag}`);
       } else if (process.stdin.isTTY && process.stdout.isTTY) {
         // 醒目的目标确认:框出 源 → 目标,单选采用 / 改 / 取消。
         note(
-          `${dim("source")}  ${abs}\n${dim("target")}  ${bold(targetDisplay(target!))}${target!.note ? dim(`  (${target!.note})`) : ""}`,
+          `${dim("source")}  ${abs}\n${dim("target")}  ${bold(targetDisplay(target!))}${providerTag}${target!.note ? dim(`  ${target!.note}`) : ""}`,
           "ark save",
         );
         const choice = await askSelect("Save to this target?", [
-          { value: "use", label: `Use ${targetDisplay(target!)}`, hint: target!.note },
+          {
+            value: "use",
+            label: `Use ${targetDisplay(target!)}${target!.provider ? `  (${target!.provider})` : ""}`,
+            hint: target!.note,
+          },
           { value: "custom", label: "Enter a different target…" },
           { value: "cancel", label: "Cancel" },
         ]);
@@ -945,7 +986,7 @@ async function main() {
         }
       } else {
         console.log(`${dim("Source:")} ${abs}`);
-        console.log(`${dim("Target:")} ${bold(targetDisplay(target!))}${target!.note ? dim(` (${target!.note})`) : ""}`);
+        console.log(`${dim("Target:")} ${bold(targetDisplay(target!))}${providerTag}${target!.note ? dim(` ${target!.note}`) : ""}`);
         console.log(dim("(non-interactive: using detected target)"));
       }
       const { folderPath, title, provider } = target!;
@@ -1021,6 +1062,38 @@ async function main() {
 
     case "sync": {
       await runSync(args);
+      return;
+    }
+
+    case "reset-anchor": {
+      // 清除某库的回滚锚点。解析目标库但「不 load」——load 正是会抛回滚错的步骤,绕开它。
+      const transport = transportFrom(args);
+      const mnemonic = await acquireMnemonic(true);
+      if (!mnemonic || !validateMnemonic(mnemonic)) {
+        fail("No usable mnemonic. Run `ark import` or set KEYSARK_MNEMONIC.");
+      }
+      const key = await deriveKey(mnemonic!);
+      const vaults = await fetchVaults(transport);
+      if (vaults.length === 0) fail("No vaults found.");
+      const sel = args.positionals[0] ?? flagStr(args.flags, "vault");
+      const descriptor = await pickVault(vaults, key, sel);
+      if (!descriptor) {
+        fail(sel ? `No vault matches "${sel}".` : "Mnemonic does not match any vault (try --vault <id|label>).");
+      }
+      const name = `${bold(descriptor!.label || "(default)")} ${cyan(`[${descriptor!.id.slice(0, 8)}]`)}`;
+      // 确认:这是放松回滚保护的动作,务必确认是本人有意为之。
+      if (process.stdin.isTTY && process.stdout.isTTY) {
+        const ok = await askConfirm(
+          `Clear the rollback guard for ${name}? Only do this if you intentionally reset or restored this vault.`,
+          false,
+        );
+        if (!ok) {
+          console.log(yellow("Cancelled."));
+          return;
+        }
+      }
+      deleteRevAnchor(descriptor!.id, keysarkDir());
+      console.log(`${OK} Rollback anchor cleared for ${name}. Next load re-anchors to the current remote rev.`);
       return;
     }
 

@@ -205,7 +205,7 @@ export class Vault {
    * (恶意/被入侵的存储后端回滚到旧 index)。本地 pending 时跳过(本地领先是合法的)。
    * 远端 index 若已下载但解密/AAD/JSON 校验失败 → 抛 VaultIntegrityError,不静默回退。
    */
-  async load(): Promise<EntryMeta[]> {
+  async load(opts?: { onRollback?: (e: VaultRollbackError) => void }): Promise<EntryMeta[]> {
     let idxFile: { id: string; size: number } | undefined;
     try {
       this.fileMap = await this.transport.list(this.dir);
@@ -231,10 +231,18 @@ export class Vault {
     } catch (err) {
       throw new VaultIntegrityError(err);
     }
-    await this.assertNoRollback(remote);
+    try {
+      await this.assertNoRollback(remote);
+    } catch (e) {
+      // 只读路径(传了 onRollback)允许「警告后照常载入回退后的远端 index」:读旧数据风险有限,
+      // 不该把 ls/get 一刀切拦死。写路径不传 onRollback → 照常抛错(在回退基线上写会丢数据)。
+      // 锚点是单调的,下面 bump(较小的 remote.rev) 不会下调它,故写仍会被后续拦截,直到显式重置锚点。
+      if (e instanceof VaultRollbackError && opts?.onRollback) opts.onRollback(e);
+      else throw e;
+    }
     this.index = remote;
     this.cache.setIndex(b64encode(bytes), false);
-    this.revAnchor?.bump(remote.rev ?? 0); // 接受的最新 rev 推进可信锚点
+    this.revAnchor?.bump(remote.rev ?? 0); // 接受的最新 rev 推进可信锚点(单调,只增不减)
     return this.entries;
   }
 
