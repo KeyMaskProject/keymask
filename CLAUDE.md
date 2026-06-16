@@ -36,6 +36,13 @@ pnpm monorepo. Workspaces: `apps/*`, `packages/*`。
 - 由环境变量 `NEXT_PUBLIC_TEST_IDS` 总开关控制(`1`/`true` 开,留空/`0`/`false` 关);生产默认关闭,关闭时不渲染任何 `data-testid`。改动该变量需重启 dev。
 - 新增布局容器时一并补 `testId`;命名约定:页面/大区用 `<scope>`(如 `landing`、`vault-workbench`),其内子区用 `<scope>-<part>`(如 `vault-nav-header`、`vault-item-content-card`)。
 
+### 5. 所有用户操作必须经 `AnalyticsEvent` 枚举上报事件(Vercel Web Analytics)
+
+- 统计唯一入口:`@/lib/analytics` 的 `AnalyticsEvent` 枚举 + `trackEvent(event, props?)`。禁止在组件里散落裸字符串 `track("...")`。
+- **新增任意用户操作(新建/编辑/删除/导出/连接/切换…)时,必须**:① 往 `AnalyticsEvent` 补一个语义化 snake_case 成员;② 在该操作的 handler 成功路径里 `trackEvent(AnalyticsEvent.Xxx, …)`。事件名跨重构稳定,改名等于换事件,谨慎。
+- **零敏感数据**(承接铁律 3):事件属性禁止出现助记词 / 明文内容 / 主密钥 / 解锁密码 / 条目标题 / 文件名 / 文件夹名。只允许非敏感、低基数的标量维度(`provider`/`view`/`sort`/`theme`/`locale`/`kind`/`scope`/`count`/`minutes`/`isNew` 等)。`trackEvent` 通过键白名单 + 标量校验 + 长度上限做运行时兜底,越界项静默丢弃 —— 但不得依赖兜底,调用处本就不该传敏感值。
+- 统计是「尽力而为」:`trackEvent` 吞掉一切异常,绝不阻断用户操作。
+
 ## 包与目录
 
 - `apps/web` — Next.js 应用。百度/Google 登录 + 统一字节文件 API + 浏览器端加解密保险库 UI。存储抽象在 `src/lib/storage.ts`。

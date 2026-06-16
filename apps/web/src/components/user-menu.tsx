@@ -14,6 +14,7 @@ import {
 } from "@keysark/ui";
 import { useT } from "./providers";
 import type { StorageProvider } from "@/lib/storage";
+import { AnalyticsEvent, trackEvent } from "@/lib/analytics";
 
 function Avatar({ name, avatar, size = 28 }: { name: string; avatar: string | null; size?: number }) {
   const [broken, setBroken] = useState(false);
@@ -117,6 +118,7 @@ export function UserMenu({
             destructive
             onSelect={(e) => {
               e.preventDefault();
+              trackEvent(AnalyticsEvent.SignOut, { provider });
               formRef.current?.requestSubmit();
             }}
           >

@@ -15,6 +15,7 @@ import {
 import { Check, Copy } from "lucide-react";
 import { useT } from "./providers";
 import { testId } from "@/lib/test-id";
+import { AnalyticsEvent, trackEvent } from "@/lib/analytics";
 
 function CodeBlock({ code, copyKey, copied, onCopy }: { code: string; copyKey: string; copied: boolean; onCopy: (key: string, code: string) => void }) {
   return (
@@ -48,6 +49,7 @@ export function CliAccessDialog({
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
   function copy(key: string, code: string) {
+    trackEvent(AnalyticsEvent.CliCommandCopy, { kind: key });
     void navigator.clipboard.writeText(code).then(() => {
       setCopiedKey(key);
       window.setTimeout(() => setCopiedKey((p) => (p === key ? null : p)), 1500);

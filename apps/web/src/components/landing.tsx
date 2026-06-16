@@ -26,6 +26,7 @@ import { localeHref, pickLocale, type MsgKey } from "@/lib/i18n";
 import { storageLabel, type ProviderFlags } from "@/lib/providers";
 import { faqLd } from "@/lib/seo";
 import { testId } from "@/lib/test-id";
+import { AnalyticsEvent, trackEvent } from "@/lib/analytics";
 
 // 第一屏三特性:安全 / 免费 / 开源。
 const FEATURES: { tag: MsgKey; title: MsgKey; body: MsgKey; icon: LucideIcon }[] = [
@@ -164,14 +165,14 @@ export function Landing({ error, providers }: { error?: string; providers: Provi
             <DocsButton />
             <HeaderControls />
             {showGoogle ? (
-              <a href="/api/auth/google">
+              <a href="/api/auth/google" onClick={() => trackEvent(AnalyticsEvent.ConnectGoogle)}>
                 <Button variant="outline" size="sm">
                   {t("nav_connect_google")}
                 </Button>
               </a>
             ) : null}
             {showBaidu ? (
-              <a href="/api/auth/login">
+              <a href="/api/auth/login" onClick={() => trackEvent(AnalyticsEvent.ConnectBaidu)}>
                 <Button variant="outline" size="sm">
                   {t("nav_connect")}
                 </Button>
@@ -198,14 +199,14 @@ export function Landing({ error, providers }: { error?: string; providers: Provi
             </p>
             <div className="mt-9 flex flex-col items-center gap-3 sm:flex-row">
               {showGoogle ? (
-                <a href="/api/auth/google">
+                <a href="/api/auth/google" onClick={() => trackEvent(AnalyticsEvent.ConnectGoogle)}>
                   <Button size="lg" className="px-8">
                     {t("cta_google")}
                   </Button>
                 </a>
               ) : null}
               {showBaidu ? (
-                <a href="/api/auth/login">
+                <a href="/api/auth/login" onClick={() => trackEvent(AnalyticsEvent.ConnectBaidu)}>
                   <Button size="lg" variant={showGoogle ? "outline" : "default"} className="px-8">
                     {t("cta_primary")}
                   </Button>

@@ -13,6 +13,7 @@ import {
 import { GithubMark } from "./brand";
 import { useLocale, useTheme } from "./providers";
 import { BUILD_REPO } from "@/lib/build-info";
+import { AnalyticsEvent, trackEvent } from "@/lib/analytics";
 import { LOCALES, LOCALE_NATIVE_NAMES, localeHref, splitLocale, THEMES, type Theme } from "@/lib/i18n";
 
 // 头部圆形图标按钮样式(语言/主题/文档共用,保持视觉一致)。
@@ -76,7 +77,13 @@ export function HeaderControls() {
         </DropdownMenuTrigger>
         <DropdownMenuContent>
           {LOCALES.map((l) => (
-            <DropdownMenuItem key={l} onSelect={() => window.location.assign(localeHref(basePath, l))}>
+            <DropdownMenuItem
+              key={l}
+              onSelect={() => {
+                trackEvent(AnalyticsEvent.LanguageChange, { locale: l });
+                window.location.assign(localeHref(basePath, l));
+              }}
+            >
               <span className="flex-1">{LOCALE_NATIVE_NAMES[l]}</span>
               {locale === l ? <Check className="h-4 w-4" /> : null}
             </DropdownMenuItem>
@@ -91,7 +98,13 @@ export function HeaderControls() {
         </DropdownMenuTrigger>
         <DropdownMenuContent>
           {THEMES.map((th) => (
-            <DropdownMenuItem key={th} onSelect={() => setTheme(th)}>
+            <DropdownMenuItem
+              key={th}
+              onSelect={() => {
+                setTheme(th);
+                trackEvent(AnalyticsEvent.ThemeChange, { theme: th });
+              }}
+            >
               <ThemeGlyph theme={th} className="h-4 w-4 text-[var(--color-muted-foreground)]" />
               <span className="flex-1">{t(`theme_${th}`)}</span>
               {theme === th ? <Check className="h-4 w-4" /> : null}

@@ -74,6 +74,7 @@ import { DocsButton, HeaderControls, RepoButton } from "./controls";
 import { UserMenu } from "./user-menu";
 import { useLocale, useT } from "./providers";
 import { Vault, openBrowserVault, itemRelPath, type EntryMeta, type FolderMeta } from "@/lib/vault";
+import { AnalyticsEvent, trackEvent } from "@/lib/analytics";
 import type { MsgKey } from "@/lib/i18n";
 import {
   changePassword,
@@ -301,6 +302,7 @@ export function VaultPanel({
   const [sort, setSort] = useState<SortSpec>(loadSort);
   function changeView(m: ViewMode) {
     setViewMode(m);
+    trackEvent(AnalyticsEvent.ViewModeChange, { view: m });
     // 铺平模式无目录导航,回到「全部」,新建条目落根目录而非残留的文件夹选择。
     if (m === "flat") setNav({ kind: "all" });
     try {
@@ -311,6 +313,7 @@ export function VaultPanel({
   }
   function changeSort(s: SortSpec) {
     setSort(s);
+    trackEvent(AnalyticsEvent.SortChange, { sort: s.key });
     try {
       window.localStorage.setItem(SORT_KEY, JSON.stringify(s));
     } catch {
@@ -467,6 +470,7 @@ export function VaultPanel({
     setChError(null);
     try {
       await changePassword(v.id, curPw, chPw);
+      trackEvent(AnalyticsEvent.VaultPasswordChange);
       closeChangePw();
       setStatus(t("pw_changed"));
     } catch {
@@ -487,6 +491,7 @@ export function VaultPanel({
   function applyIdleMinutes(n: number) {
     setIdleMinutes(n);
     saveIdleMinutes(n);
+    trackEvent(AnalyticsEvent.VaultAutolockSet, { minutes: n });
   }
 
   async function enterVault(key: CryptoKey, descriptor: VaultDescriptor) {
@@ -515,6 +520,7 @@ export function VaultPanel({
     setMnemonicInput("");
     setStatus(null);
     setPhase("unlock");
+    trackEvent(AnalyticsEvent.VaultSelect);
   }
 
   // ---- 助记词验证(无本机凭据 / 忘记密码时):通过后进入「设置密码」步骤,不直接进库 ----
@@ -535,6 +541,7 @@ export function VaultPanel({
       setMnemonicInput("");
       setStatus(null);
       setSetup({ key: k, mnemonic: m });
+      trackEvent(AnalyticsEvent.VaultRecover, { provider });
     } catch (err) {
       setStatus(t("st_unlock_fail", String(err)));
     } finally {
@@ -569,6 +576,7 @@ export function VaultPanel({
         return;
       }
       setPasswordInput("");
+      trackEvent(AnalyticsEvent.VaultUnlock, { provider });
       await enterVault(k, v);
     } catch (err) {
       setStatus(t("st_unlock_fail", String(err)));
@@ -597,6 +605,7 @@ export function VaultPanel({
       setSetup(null);
       setNewPw("");
       setNewPw2("");
+      trackEvent(AnalyticsEvent.VaultPasswordSet);
       await enterVault(key, v);
     } catch (err) {
       setStatus(t("st_unlock_fail", String(err)));
@@ -612,6 +621,7 @@ export function VaultPanel({
     setConfirming(false);
     setChallengeInput({});
     setStatus(null);
+    trackEvent(AnalyticsEvent.MnemonicGenerate);
   }
 
   // 下载保险库备份 PDF(完整助记词只在此文件里;纯客户端生成,不走服务端)。
@@ -627,6 +637,7 @@ export function VaultPanel({
         locale,
       });
       setDownloaded(true);
+      trackEvent(AnalyticsEvent.BackupPdfDownload);
     } catch (err) {
       setStatus(t("st_save_fail", String(err)));
     } finally {
@@ -653,6 +664,7 @@ export function VaultPanel({
       setBkPw("");
       setBkPw2("");
       setStatus(null);
+      trackEvent(AnalyticsEvent.BackupHtmlDownload);
     } catch (err) {
       setStatus(t("st_html_export_fail", String(err)));
     } finally {
@@ -689,6 +701,7 @@ export function VaultPanel({
       const nextRegistry: Registry = { v: 1, vaults: [...vaults, descriptor] };
       await saveRegistry(nextRegistry);
       setVaults(nextRegistry.vaults);
+      trackEvent(AnalyticsEvent.VaultCreate, { provider, isNew: vaults.length === 0 });
       // 创建完成后强制设置本机解锁密码(unlock 界面因 setup 存在直接显示「设置密码」)。
       setSelectedVault(descriptor);
       setSetup({ key: k, mnemonic: newMnemonic });
@@ -751,6 +764,7 @@ export function VaultPanel({
       setMode("preview");
       setRevealed(false); // 每次打开条目都重新盖上遮罩
       setStatus(null);
+      trackEvent(AnalyticsEvent.ItemOpen, { kind: meta.filename ? "file" : "text" });
     } catch (err) {
       setStatus(t("st_open_fail", String(err)));
     } finally {
@@ -772,6 +786,7 @@ export function VaultPanel({
       });
       setEntries(result.entries);
       setSelectedId(result.id);
+      trackEvent(AnalyticsEvent.ItemSave, { isNew: draftId !== null });
       setDraftId(null); // 草稿已落库,不再是草稿
       updatePending(v);
       setMode("preview"); // 保存后回到只读预览
@@ -818,6 +833,7 @@ export function VaultPanel({
       setContent("");
       setMode("preview");
       updatePending(v);
+      trackEvent(AnalyticsEvent.FileUpload, { provider });
       setStatus(result.synced ? t("st_uploaded", storeName) : t("st_uploaded_local", storeName, result.syncError ?? ""));
     } catch (err) {
       setStatus(t("st_upload_fail", String(err)));
@@ -846,6 +862,7 @@ export function VaultPanel({
       a.remove();
       URL.revokeObjectURL(url); // 100MB 用完即释放,避免内存泄漏
       setStatus(null);
+      trackEvent(AnalyticsEvent.FileDownload, { provider });
     } catch (err) {
       setStatus(t("st_download_fail", String(err)));
     } finally {
@@ -885,6 +902,7 @@ export function VaultPanel({
         }
       }
       updatePending(v);
+      trackEvent(AnalyticsEvent.SyncNow, { provider, count: remaining });
       // 全部同步成功不弹文案,顶栏「已同步 · 刚刚」即状态;有剩余才提示。
       setStatus(remaining === 0 ? null : t("pending_count", remaining));
     } catch (err) {
@@ -912,6 +930,7 @@ export function VaultPanel({
     if (folderId) setExpanded((prev) => new Set(prev).add(folderId)); // 在某文件夹下新建则展开它
     setMode("edit"); // 新建直接进编辑
     setStatus(null);
+    trackEvent(AnalyticsEvent.ItemCreate);
   }
 
   // 拖拽放置:把条目移动到某文件夹(null=根)。只改 index 元数据。
@@ -926,6 +945,7 @@ export function VaultPanel({
       const res = await v.moveEntry(itemId, folderId);
       setEntries(res.entries);
       updatePending(v);
+      trackEvent(AnalyticsEvent.ItemMove);
       if (folderId) setExpanded((prev) => new Set(prev).add(folderId)); // 展开目标,移动后立即可见
       setStatus(res.synced ? t("st_saved", storeName) : t("st_saved_local", storeName, res.syncError ?? ""));
     } catch (err) {
@@ -940,6 +960,7 @@ export function VaultPanel({
     setMode("edit");
     setRevealed(true); // 编辑态内容必然可见;取消/保存回到预览也不再遮
     setStatus(null);
+    trackEvent(AnalyticsEvent.ItemEdit);
   }
 
   // 永久删除条目(含全部历史版本)。确认在 AlertDialog 里完成,这里只执行删除;删后清空当前选中。
@@ -952,6 +973,7 @@ export function VaultPanel({
       const res = await v.remove(meta.id);
       setEntries(res.entries);
       updatePending(v);
+      trackEvent(AnalyticsEvent.ItemDelete, { kind: meta.filename ? "file" : "text" });
       if (selectedId === meta.id) {
         setSelectedId(null);
         setShowHistory(false);
@@ -984,6 +1006,7 @@ export function VaultPanel({
       setShowHistory(false);
       setMode("preview");
       updatePending(v);
+      trackEvent(AnalyticsEvent.VersionRestore);
       setStatus(t("version_restored"));
     } catch (err) {
       setStatus(t("st_open_fail", String(err)));
@@ -1050,6 +1073,7 @@ export function VaultPanel({
       const res = await v.addFolder(t("new_folder"), parentId);
       setFolders(res.folders);
       updatePending(v);
+      trackEvent(AnalyticsEvent.FolderCreate, { scope: parentId ? "sub" : "root" });
       if (parentId) setExpanded((prev) => new Set(prev).add(parentId));
       // 立即进入重命名
       setRenamingId(res.id);
@@ -1071,7 +1095,10 @@ export function VaultPanel({
     if (!id) return;
     const name = renameValue.trim();
     setRenamingId(null);
-    if (name) await runFolderOp(() => vaultRef.current!.renameFolder(id, name));
+    if (name) {
+      await runFolderOp(() => vaultRef.current!.renameFolder(id, name));
+      trackEvent(AnalyticsEvent.FolderRename);
+    }
   }
   // 打开文件夹删除确认弹窗(需手动输入 "delete" 才能确认)。
   function removeFolder(f: FolderMeta) {
@@ -1085,6 +1112,7 @@ export function VaultPanel({
     if (nav.kind === "folder" && nav.id === f.id) setNav({ kind: "all" });
     setDeleteFolderTarget(null);
     await runFolderOp(() => vaultRef.current!.deleteFolder(f.id));
+    trackEvent(AnalyticsEvent.FolderDelete);
   }
 
   // 锁定:清内存密钥 + 清工作台状态 + 清所有 secret state,回到选择/解锁界面。
@@ -1092,6 +1120,7 @@ export function VaultPanel({
   // 锁定本 tab + 广播给其它 tab 一起锁;闲置计时器与锁定按钮都走这里。
   function lock() {
     lockChannelRef.current?.postMessage("lock");
+    trackEvent(AnalyticsEvent.VaultLock);
     lockLocal();
   }
   // 只清当前 tab 内存(收到其它 tab 的锁定广播时也走这里,不再回播)。
@@ -2431,7 +2460,12 @@ export function VaultPanel({
                       {...testId("vault-item-history-toggle")}
                       size="sm"
                       variant={showHistory ? "default" : "secondary"}
-                      onClick={() => setShowHistory((s) => !s)}
+                      onClick={() =>
+                        setShowHistory((s) => {
+                          if (!s) trackEvent(AnalyticsEvent.VersionHistoryOpen);
+                          return !s;
+                        })
+                      }
                       disabled={busy}
                     >
                       <History className="h-3.5 w-3.5" />
@@ -2647,7 +2681,10 @@ export function VaultPanel({
                       <button
                         type="button"
                         {...testId("vault-item-cli-access")}
-                        onClick={() => setShowCliHowto(true)}
+                        onClick={() => {
+                          setShowCliHowto(true);
+                          trackEvent(AnalyticsEvent.CliDialogOpen);
+                        }}
                         className="inline-flex shrink-0 items-center gap-1 text-[var(--color-primary)] hover:underline"
                       >
                         <Terminal className="h-3 w-3" />
