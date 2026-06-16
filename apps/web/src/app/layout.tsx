@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
+import { Analytics } from "@vercel/analytics/next";
 import { cookies } from "next/headers";
 import "./globals.css";
 import { Providers } from "@/components/providers";
@@ -105,6 +106,7 @@ export default async function RootLayout({
         <Providers initialLocale={locale} initialTheme={theme}>
           {children}
         </Providers>
+        <Analytics />
       </body>
     </html>
   );
