@@ -242,7 +242,7 @@ const de: Partial<Messages> = {
   docs_cmd_logout: "Lösche die lokale Anmeldung (behält die Phrasen-Anmeldedaten).",
   docs_cmd_forget: "Entferne die lokal gespeicherten Phrasen-Anmeldedaten und den Entsperr-Cache.",
   docs_options_title: "Globale Optionen",
-  docs_opt_server: "Überschreibe die Server-URL (Standard https://keymask.com).",
+  docs_opt_server: "Überschreibe die Server-URL (Standard https://keymask.xyz).",
   docs_opt_vault: "Wähle einen Tresor nach ID oder Bezeichnung (Standard ist der erste, der zu deiner Phrase passt).",
   docs_opt_no_browser: "Den Browser beim Anmelden nicht automatisch öffnen.",
   docs_examples_title: "Häufige Beispiele",

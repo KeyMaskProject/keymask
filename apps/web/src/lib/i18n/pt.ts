@@ -242,7 +242,7 @@ const pt: Partial<Messages> = {
   docs_cmd_logout: "Limpa o login local (mantém a credencial da frase).",
   docs_cmd_forget: "Remove a credencial da frase armazenada localmente e o cache de desbloqueio.",
   docs_options_title: "Opções globais",
-  docs_opt_server: "Sobrescreve a URL do servidor (padrão https://keymask.com).",
+  docs_opt_server: "Sobrescreve a URL do servidor (padrão https://keymask.xyz).",
   docs_opt_vault: "Seleciona um cofre por ID ou rótulo (padrão é o primeiro que corresponde à sua frase).",
   docs_opt_no_browser: "Não abrir o navegador automaticamente durante o login.",
   docs_examples_title: "Exemplos comuns",

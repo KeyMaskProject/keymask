@@ -562,7 +562,7 @@ Unlock (same rules as the web app):
   Argon2id). A correct password unlocks until 5 min of inactivity (sliding renewal).
 
 Global options (position-independent):
-  --server <url>       API base; default: KEYMASK_SERVER, else https://keymask.com
+  --server <url>       API base; default: KEYMASK_SERVER, else https://keymask.xyz
   --vault <id|label>   Select vault
   --no-browser         Don't auto-open the browser on login
 Env:

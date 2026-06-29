@@ -242,7 +242,7 @@ const ja: Partial<Messages> = {
   docs_cmd_logout: "ローカルのログインを消去します(フレーズの資格情報は保持)。",
   docs_cmd_forget: "ローカルに保存されたフレーズの資格情報と解除キャッシュを削除します。",
   docs_options_title: "グローバルオプション",
-  docs_opt_server: "サーバー URL を上書きします(デフォルト https://keymask.com)。",
+  docs_opt_server: "サーバー URL を上書きします(デフォルト https://keymask.xyz)。",
   docs_opt_vault: "ID またはラベルで保管庫を選択します(デフォルトはフレーズに一致する最初のもの)。",
   docs_opt_no_browser: "ログイン時にブラウザを自動で開きません。",
   docs_examples_title: "よくある例",

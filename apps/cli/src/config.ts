@@ -16,7 +16,7 @@ declare const __KEYMASK_VERSION__: string | undefined;
 
 /** 内置默认云端接口;本地开发用 KEYMASK_SERVER 或 --server 覆盖。 */
 export function defaultServer(): string {
-  return "https://keymask.com";
+  return "https://keymask.xyz";
 }
 
 /** CLI 版本(build 时注入;源码直跑为 "dev")。 */

@@ -242,7 +242,7 @@ const es: Partial<Messages> = {
   docs_cmd_logout: "Borra el inicio de sesión local (conserva la credencial de la frase).",
   docs_cmd_forget: "Elimina la credencial de la frase almacenada localmente y la caché de desbloqueo.",
   docs_options_title: "Opciones globales",
-  docs_opt_server: "Sobrescribe la URL del servidor (por defecto https://keymask.com).",
+  docs_opt_server: "Sobrescribe la URL del servidor (por defecto https://keymask.xyz).",
   docs_opt_vault: "Selecciona una bóveda por ID o etiqueta (por defecto la primera que coincida con tu frase).",
   docs_opt_no_browser: "No abrir el navegador automáticamente durante el inicio de sesión.",
   docs_examples_title: "Ejemplos comunes",

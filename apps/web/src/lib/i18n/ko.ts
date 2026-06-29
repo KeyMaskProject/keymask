@@ -242,7 +242,7 @@ const ko: Partial<Messages> = {
   docs_cmd_logout: "로컬 로그인을 지웁니다 (문구 자격 증명은 유지).",
   docs_cmd_forget: "로컬에 저장된 문구 자격 증명과 잠금 해제 캐시를 제거합니다.",
   docs_options_title: "전역 옵션",
-  docs_opt_server: "서버 URL을 재정의합니다 (기본값 https://keymask.com).",
+  docs_opt_server: "서버 URL을 재정의합니다 (기본값 https://keymask.xyz).",
   docs_opt_vault: "ID 또는 레이블로 보관함을 선택합니다 (기본값은 문구와 일치하는 첫 번째 보관함).",
   docs_opt_no_browser: "로그인 시 브라우저를 자동으로 열지 않습니다.",
   docs_examples_title: "자주 쓰는 예시",

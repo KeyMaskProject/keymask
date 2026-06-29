@@ -242,7 +242,7 @@ const fr: Partial<Messages> = {
   docs_cmd_logout: "Efface la connexion locale (conserve l'identifiant de la phrase).",
   docs_cmd_forget: "Supprime l'identifiant de la phrase stocké localement et le cache de déverrouillage.",
   docs_options_title: "Options globales",
-  docs_opt_server: "Remplace l'URL du serveur (par défaut https://keymask.com).",
+  docs_opt_server: "Remplace l'URL du serveur (par défaut https://keymask.xyz).",
   docs_opt_vault: "Sélectionne un coffre par ID ou par étiquette (par défaut le premier correspondant à votre phrase).",
   docs_opt_no_browser: "Ne pas ouvrir automatiquement le navigateur pendant la connexion.",
   docs_examples_title: "Exemples courants",
